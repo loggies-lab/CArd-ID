@@ -9,8 +9,8 @@ interface CardTableProps {
   items: CardItem[];
   setItems: React.Dispatch<React.SetStateAction<CardItem[]>>;
   onReidentifyCard: (cardId: string) => void;
-  saveCard: (item: CardItem) => boolean;
-  saveBatch: (items: CardItem[]) => number;
+  saveCard: (item: CardItem) => Promise<boolean> | boolean;
+  saveBatch: (items: CardItem[]) => Promise<number> | number;
   isSaved: (id: string) => boolean;
 }
 
@@ -59,8 +59,8 @@ export function CardTable({
     setItems((prev) => prev.filter((i) => i.id !== id));
   };
 
-  const handleSaveBatchAll = () => {
-    const count = saveBatch(items);
+  const handleSaveBatchAll = async () => {
+    const count = await saveBatch(items);
     if (count > 0) {
       setSaveBatchMessage(`Successfully saved ${count} card${count > 1 ? "s" : ""} to your collection!`);
     } else {

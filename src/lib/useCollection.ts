@@ -2,19 +2,62 @@
 
 import { useState, useEffect } from "react";
 import { CardItem, SavedCollectionItem } from "@/types/card";
+import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
 
 const STORAGE_KEY = "card_id_online_collection_v1";
+
+/**
+ * Converts blob: URLs or File instances to permanent base64 Data URLs
+ * to ensure images persist across page refreshes.
+ */
+async function ensureDataUrl(preview?: string, file?: File | null): Promise<string | undefined> {
+  if (!preview) return undefined;
+  if (preview.startsWith("data:")) return preview;
+
+  if (file) {
+    try {
+      return await fileToOptimizedBase64(file, 800, 0.85);
+    } catch (e) {
+      console.error("Failed to convert File to base64 Data URL:", e);
+    }
+  }
+
+  if (preview.startsWith("blob:")) {
+    try {
+      const response = await fetch(preview);
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(undefined);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.error("Failed to convert blob URL to base64 Data URL:", e);
+      return undefined;
+    }
+  }
+
+  return preview;
+}
 
 export function useCollection() {
   const [savedCards, setSavedCards] = useState<SavedCollectionItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount and sanitize broken blob URLs
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setSavedCards(JSON.parse(stored));
+        const parsed: SavedCollectionItem[] = JSON.parse(stored);
+        // Clean out invalid blob: URLs from previous sessions if any exist
+        const sanitized = parsed.map((item) => ({
+          ...item,
+          frontPreview: item.frontPreview?.startsWith("blob:") ? undefined : item.frontPreview,
+          backPreview: item.backPreview?.startsWith("blob:") ? undefined : item.backPreview,
+        }));
+        setSavedCards(sanitized);
       }
     } catch (e) {
       console.error("Failed to load collection from localStorage:", e);
@@ -23,7 +66,7 @@ export function useCollection() {
     }
   }, []);
 
-  // Save helper
+  // Storage updater helper
   const updateStorage = (updated: SavedCollectionItem[]) => {
     setSavedCards(updated);
     try {
@@ -33,15 +76,18 @@ export function useCollection() {
     }
   };
 
-  const saveCard = (item: CardItem): boolean => {
+  const saveCard = async (item: CardItem): Promise<boolean> => {
     if (!item.data) return false;
     if (savedCards.some((c) => c.id === item.id)) return false;
+
+    const frontPreview = await ensureDataUrl(item.frontPreview, item.frontFile);
+    const backPreview = await ensureDataUrl(item.backPreview, item.backFile);
 
     const newItem: SavedCollectionItem = {
       id: item.id,
       prefix: item.prefix,
-      frontPreview: item.frontPreview,
-      backPreview: item.backPreview,
+      frontPreview,
+      backPreview,
       dateAdded: new Date().toISOString(),
       data: item.data,
     };
@@ -50,18 +96,21 @@ export function useCollection() {
     return true;
   };
 
-  const saveBatch = (items: CardItem[]): number => {
+  const saveBatch = async (items: CardItem[]): Promise<number> => {
     const validItems = items.filter((i) => i.status === "success" && i.data);
     let addedCount = 0;
     const newItems: SavedCollectionItem[] = [...savedCards];
 
     for (const item of validItems) {
       if (!newItems.some((c) => c.id === item.id) && item.data) {
+        const frontPreview = await ensureDataUrl(item.frontPreview, item.frontFile);
+        const backPreview = await ensureDataUrl(item.backPreview, item.backFile);
+
         newItems.unshift({
           id: item.id,
           prefix: item.prefix,
-          frontPreview: item.frontPreview,
-          backPreview: item.backPreview,
+          frontPreview,
+          backPreview,
           dateAdded: new Date().toISOString(),
           data: item.data,
         });

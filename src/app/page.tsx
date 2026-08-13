@@ -71,6 +71,8 @@ export default function Home() {
 
       return {
         ...item,
+        frontPreview: frontBase64 || item.frontPreview,
+        backPreview: backBase64 || item.backPreview,
         status: "success",
         data: cardData,
         errorMessage: undefined,
