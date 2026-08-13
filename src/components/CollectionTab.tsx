@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from "react";
 import { SavedCollectionItem } from "@/types/card";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
+import { generateCdpTitle } from "@/lib/titleGenerator";
 import {
   Search,
   Download,
@@ -373,16 +374,12 @@ export function CollectionTab({
                 >
                   <div>
                     <div className="flex items-start justify-between gap-1">
-                      <h4 className="text-base font-extrabold text-white line-clamp-1">
-                        {card.playerName || "Unknown Player"}
+                      <h4 className="text-xs font-mono font-bold text-cyan-300 line-clamp-2 leading-snug" title={generateCdpTitle(card)}>
+                        {generateCdpTitle(card) || card.playerName || "Unknown Card"}
                       </h4>
                     </div>
 
-                    <p className="text-xs text-slate-300 font-medium line-clamp-1 mt-0.5">
-                      {card.year} {card.brand} {card.setName}
-                    </p>
-
-                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1">
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-1.5">
                       <span>{card.team || "N/A"}</span>
                       <span>•</span>
                       <span className="font-mono">{card.sport || "Sports"}</span>
@@ -436,6 +433,7 @@ export function CollectionTab({
               <thead className="border-b border-slate-800 bg-slate-950 text-slate-400 uppercase font-mono tracking-wider">
                 <tr>
                   <th className="p-3">Card / Thumb</th>
+                  <th className="p-3 min-w-[220px]">CDP Title</th>
                   <th className="p-3">Player Name</th>
                   <th className="p-3">Year / Brand / Set</th>
                   <th className="p-3">Card #</th>
@@ -474,6 +472,9 @@ export function CollectionTab({
                             />
                           )}
                         </div>
+                      </td>
+                      <td className="p-3 font-mono font-bold text-cyan-300 max-w-[240px] truncate" title={generateCdpTitle(card)}>
+                        {generateCdpTitle(card) || "-"}
                       </td>
                       <td className="p-3 font-bold text-white">{card.playerName}</td>
                       <td className="p-3">

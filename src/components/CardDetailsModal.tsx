@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
-import { X, Save, Sparkles, Image as ImageIcon, CheckCircle, Tag, ShieldCheck, MapPin, Award } from "lucide-react";
+import { generateCdpTitle } from "@/lib/titleGenerator";
+import { X, Save, Sparkles, Image as ImageIcon, CheckCircle, Tag, ShieldCheck, MapPin, Award, Copy, Check } from "lucide-react";
 
 interface CardDetailsModalProps {
   card: CardItem | SavedCollectionItem | null;
@@ -18,6 +19,7 @@ export function CardDetailsModal({
   onSave,
 }: CardDetailsModalProps) {
   const [activeSide, setActiveSide] = useState<"front" | "back">("front");
+  const [copiedTitle, setCopiedTitle] = useState(false);
 
   // Editable form state initialized from card data
   const [formData, setFormData] = useState<CDPCardSchema>({
@@ -62,6 +64,7 @@ export function CardDetailsModal({
         location: card.data.location || "",
       });
       setActiveSide("front");
+      setCopiedTitle(false);
     }
   }, [card]);
 
@@ -80,8 +83,14 @@ export function CardDetailsModal({
     onClose();
   };
 
-  // Primary Title Display: [Year] [Brand] [Set Name] #[Card Number] [Player Name]
-  const cardTitle = `${formData.year || ''} ${formData.brand || ''} ${formData.setName || ''} ${formData.cardNumber ? `#${formData.cardNumber}` : ''} ${formData.playerName || ''}`.trim() || 'Trading Card Details';
+  // Re-run generateCdpTitle automatically whenever any attribute changes
+  const cdpTitle = generateCdpTitle(formData);
+
+  const handleCopyTitle = () => {
+    navigator.clipboard.writeText(cdpTitle);
+    setCopiedTitle(true);
+    setTimeout(() => setCopiedTitle(false), 2500);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
@@ -94,10 +103,10 @@ export function CardDetailsModal({
             </div>
             <div>
               <span className="rounded bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
-                Card Inspector • CDP Standard
+                Card Inspector • CDP Title Generator
               </span>
               <h3 className="text-base font-extrabold text-white tracking-tight line-clamp-1">
-                {cardTitle}
+                {cdpTitle || "Trading Card Inspector"}
               </h3>
             </div>
           </div>
@@ -171,17 +180,40 @@ export function CardDetailsModal({
               </div>
             </div>
 
-            {/* Quick Header Metadata Summary */}
+            {/* Quick Header Metadata Summary & Generated Marketplace Title */}
             <div className="md:col-span-2 space-y-4 flex flex-col justify-between">
-              <div>
-                <span className="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">
-                  Full CDP Identifier Title
-                </span>
-                <h2 className="text-xl font-black text-white mt-1 leading-snug">
-                  {cardTitle}
-                </h2>
+              <div className="space-y-3">
+                {/* Generated Marketplace Title Input + Copy Button */}
+                <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-cyan-400" /> Generated Marketplace Title
+                    </span>
+                    {copiedTitle && (
+                      <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 rounded">
+                        ✓ Copied to Clipboard!
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={cdpTitle}
+                      className="w-full bg-slate-950/90 border border-slate-800 rounded-lg p-2 text-xs font-mono font-bold text-white focus:outline-none select-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCopyTitle}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs font-bold text-white shadow-md transition active:scale-95 shrink-0"
+                    >
+                      {copiedTitle ? <Check className="h-3.5 w-3.5 text-white" /> : <Copy className="h-3.5 w-3.5 text-white" />}
+                      {copiedTitle ? "Copied" : "Copy Title"}
+                    </button>
+                  </div>
+                </div>
 
-                <div className="flex items-center gap-2 flex-wrap mt-3">
+                <div className="flex items-center gap-2 flex-wrap pt-1">
                   {formData.isRookie && (
                     <span className="rounded bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-xs font-mono font-bold text-emerald-300">
                       ⭐ ROOKIE CARD
