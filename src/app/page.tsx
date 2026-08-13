@@ -5,9 +5,10 @@ import { HeaderBar } from "@/components/HeaderBar";
 import { FileDropzone } from "@/components/FileDropzone";
 import { CardTable } from "@/components/CardTable";
 import { CollectionTab } from "@/components/CollectionTab";
+import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
-import { CardItem } from "@/types/card";
+import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
 
 export default function Home() {
@@ -16,15 +17,27 @@ export default function Home() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [globalError, setGlobalError] = useState<string | null>(null);
+  const [inspectingCard, setInspectingCard] = useState<CardItem | SavedCollectionItem | null>(null);
 
   const {
     savedCards,
     saveCard,
     saveBatch,
+    updateSavedCardData,
     removeCard,
     clearCollection,
     isSaved,
   } = useCollection();
+
+  const handleSaveCardDetails = (cardId: string, updatedData: CDPCardSchema) => {
+    // Update scanner items state if item is in batch scanner
+    setItems((prev) =>
+      prev.map((item) => (item.id === cardId ? { ...item, data: updatedData } : item))
+    );
+
+    // Update persistent localStorage collection if item is saved
+    updateSavedCardData(cardId, updatedData);
+  };
 
   const processSingleCard = async (item: CardItem): Promise<CardItem> => {
     try {
@@ -229,6 +242,7 @@ export default function Home() {
                   saveCard={saveCard}
                   saveBatch={saveBatch}
                   isSaved={isSaved}
+                  onInspectCard={(card) => setInspectingCard(card)}
                 />
               </section>
             )}
@@ -244,9 +258,18 @@ export default function Home() {
               savedCards={savedCards}
               removeCard={removeCard}
               clearCollection={clearCollection}
+              onInspectCard={(card) => setInspectingCard(card)}
             />
           </section>
         )}
+
+        {/* Card Inspector Modal */}
+        <CardDetailsModal
+          card={inspectingCard}
+          isOpen={!!inspectingCard}
+          onClose={() => setInspectingCard(null)}
+          onSave={handleSaveCardDetails}
+        />
       </main>
     </div>
   );

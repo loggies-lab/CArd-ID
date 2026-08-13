@@ -25,12 +25,14 @@ interface CollectionTabProps {
   savedCards: SavedCollectionItem[];
   removeCard: (id: string) => void;
   clearCollection: () => void;
+  onInspectCard?: (card: SavedCollectionItem) => void;
 }
 
 export function CollectionTab({
   savedCards,
   removeCard,
   clearCollection,
+  onInspectCard,
 }: CollectionTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSport, setSelectedSport] = useState("all");
@@ -336,25 +338,39 @@ export function CollectionTab({
                     </div>
                   )}
 
-                  {/* Top Badges */}
+                  {/* Top Badges & Actions */}
                   <div className="absolute top-2 left-2 flex items-center gap-1 flex-wrap">
                     <span className="rounded-md bg-slate-950/90 border border-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
                       #{card.cardNumber || item.prefix}
                     </span>
                   </div>
 
-                  {/* Delete Button */}
-                  <button
-                    onClick={() => removeCard(item.id)}
-                    className="absolute top-2 right-2 h-7 w-7 rounded-lg bg-slate-950/80 border border-slate-800 text-rose-400 opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition flex items-center justify-center"
-                    title="Remove from Collection"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                    {onInspectCard && (
+                      <button
+                        onClick={() => onInspectCard(item)}
+                        className="h-7 w-7 rounded-lg bg-slate-950/80 border border-slate-800 text-cyan-400 hover:bg-cyan-500 hover:text-white transition flex items-center justify-center shadow-lg"
+                        title="Inspect & Edit Card Details"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => removeCard(item.id)}
+                      className="h-7 w-7 rounded-lg bg-slate-950/80 border border-slate-800 text-rose-400 hover:bg-rose-500 hover:text-white transition flex items-center justify-center shadow-lg"
+                      title="Remove from Collection"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Metadata Body */}
-                <div className="p-4 space-y-3 flex-1 flex flex-col justify-between">
+                <div
+                  onClick={() => onInspectCard && onInspectCard(item)}
+                  className="p-4 space-y-3 flex-1 flex flex-col justify-between cursor-pointer hover:bg-slate-900/90 transition"
+                  title="Click to inspect full CDP card details"
+                >
                   <div>
                     <div className="flex items-start justify-between gap-1">
                       <h4 className="text-base font-extrabold text-white line-clamp-1">
@@ -491,13 +507,24 @@ export function CollectionTab({
                         {new Date(item.dateAdded).toLocaleDateString()}
                       </td>
                       <td className="p-3 text-right">
-                        <button
-                          onClick={() => removeCard(item.id)}
-                          className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40 transition"
-                          title="Delete Card"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {onInspectCard && (
+                            <button
+                              onClick={() => onInspectCard(item)}
+                              className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/40 transition"
+                              title="Inspect & Edit Card Details"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => removeCard(item.id)}
+                            className="p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/40 transition"
+                            title="Delete Card"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

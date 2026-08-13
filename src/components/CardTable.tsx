@@ -12,6 +12,7 @@ interface CardTableProps {
   saveCard: (item: CardItem) => Promise<boolean> | boolean;
   saveBatch: (items: CardItem[]) => Promise<number> | number;
   isSaved: (id: string) => boolean;
+  onInspectCard?: (card: CardItem) => void;
 }
 
 export function CardTable({
@@ -21,6 +22,7 @@ export function CardTable({
   saveCard,
   saveBatch,
   isSaved,
+  onInspectCard,
 }: CardTableProps) {
   const [selectedPreview, setSelectedPreview] = useState<CardItem | null>(null);
   const [saveBatchMessage, setSaveBatchMessage] = useState<string | null>(null);
@@ -158,8 +160,9 @@ export function CardTable({
                   {/* Thumbnails */}
                   <td className="p-2 text-center">
                     <div
-                      onClick={() => setSelectedPreview(item)}
+                      onClick={() => onInspectCard ? onInspectCard(item) : setSelectedPreview(item)}
                       className="cursor-pointer flex items-center justify-center -space-x-2 hover:scale-105 transition"
+                      title="Inspect Card Details"
                     >
                       {item.frontPreview ? (
                         <img
@@ -358,6 +361,17 @@ export function CardTable({
                       >
                         {saved ? <BookmarkCheck className="h-3.5 w-3.5" /> : <BookmarkPlus className="h-3.5 w-3.5" />}
                       </button>
+
+                      {/* Inspect Card Details Button */}
+                      {onInspectCard && (
+                        <button
+                          onClick={() => onInspectCard(item)}
+                          title="Inspect & Edit Full Card Details"
+                          className="p-1.5 rounded hover:bg-slate-800 text-slate-400 hover:text-cyan-300 transition border border-slate-800"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                      )}
 
                       <button
                         onClick={() => onReidentifyCard(item.id)}

@@ -11,6 +11,11 @@ export interface CDPCardSchema {
   isAutographed: boolean;
   isMemorabilia: boolean;
   isNumbered: boolean;
+  numberedTo?: string;
+  condition?: "Raw" | "Graded";
+  gradingCompany?: "None" | "PSA" | "BGS" | "SGC" | "CGC" | string;
+  grade?: string;
+  location?: string;
 }
 
 export interface CardItem {
@@ -35,4 +40,3 @@ export interface SavedCollectionItem {
   notes?: string;
   data: CDPCardSchema;
 }
-

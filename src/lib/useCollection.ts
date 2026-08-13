@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CardItem, SavedCollectionItem } from "@/types/card";
+import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
 
 const STORAGE_KEY = "card_id_online_collection_v1";
@@ -134,6 +134,11 @@ export function useCollection() {
     updateStorage([]);
   };
 
+  const updateSavedCardData = (id: string, data: CDPCardSchema) => {
+    const updated = savedCards.map((c) => (c.id === id ? { ...c, data } : c));
+    updateStorage(updated);
+  };
+
   const isSaved = (id: string) => {
     return savedCards.some((c) => c.id === id);
   };
@@ -143,6 +148,7 @@ export function useCollection() {
     isLoaded,
     saveCard,
     saveBatch,
+    updateSavedCardData,
     removeCard,
     clearCollection,
     isSaved,
