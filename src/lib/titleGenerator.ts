@@ -13,28 +13,36 @@ export function generateCdpTitle(card: {
 }): string {
   const parts: string[] = [];
 
-  // 1. Year & Set Name (e.g., "2025-26 Topps Chrome" or "1991 Upper Deck")
+  const yearStr = card.year ? String(card.year).trim() : '';
+
+  // 1. Year & Set Name / Brand
   if (card.setName) {
-    parts.push(card.setName);
+    const setNameStr = card.setName.trim();
+    // Prepend year if it isn't already at the start of setName
+    if (yearStr && !setNameStr.startsWith(yearStr)) {
+      parts.push(`${yearStr} ${setNameStr}`);
+    } else {
+      parts.push(setNameStr);
+    }
   } else {
-    if (card.year) parts.push(String(card.year));
-    if (card.brand) parts.push(card.brand);
+    if (yearStr) parts.push(yearStr);
+    if (card.brand) parts.push(card.brand.trim());
   }
 
   // 2. Card Number with '#' (e.g., "#224" or "#BCV-166")
   if (card.cardNumber) {
-    const cleanNum = String(card.cardNumber).replace(/^#/, '');
-    parts.push(`#${cleanNum}`);
+    const cleanNum = String(card.cardNumber).replace(/^#/, '').trim();
+    if (cleanNum) parts.push(`#${cleanNum}`);
   }
 
   // 3. Player Name
   if (card.playerName) {
-    parts.push(card.playerName);
+    parts.push(card.playerName.trim());
   }
 
   // 4. Subset / Parallel (Ignore if 'Base')
-  if (card.subsetParallel && card.subsetParallel.toLowerCase() !== 'base') {
-    parts.push(card.subsetParallel);
+  if (card.subsetParallel && card.subsetParallel.trim().toLowerCase() !== 'base') {
+    parts.push(card.subsetParallel.trim());
   }
 
   // 5. Special Attributes (RC, AUTO, MEM, /XX)
