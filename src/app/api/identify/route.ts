@@ -25,6 +25,20 @@ function getGenAiClient(apiKey?: string): { ai: GoogleGenAI; modelName: string }
   return { ai: vertexAiClientCache, modelName: "gemini-2.5-flash" };
 }
 
+function parseCleanJson(rawText: string) {
+  let cleaned = rawText.trim();
+  if (cleaned.startsWith("```")) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  } else {
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+    }
+  }
+  return JSON.parse(cleaned);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -66,10 +80,9 @@ DO NOT output mock fallbacks or generic default values.`;
     const { ai, modelName } = getGenAiClient(apiKey);
     let responseText: string | undefined;
 
-    // Optimized generation configuration: cap tokens & set low temperature for fast, deterministic output
     const generationConfig = {
       responseMimeType: "application/json",
-      maxOutputTokens: 350,
+      maxOutputTokens: 2048,
       temperature: 0.1,
     };
 
@@ -108,7 +121,7 @@ DO NOT output mock fallbacks or generic default values.`;
       throw new Error("Empty response received from Gemini model.");
     }
 
-    const parsedData = JSON.parse(responseText);
+    const parsedData = parseCleanJson(responseText);
 
     // Rule 1 Enforcement: NEVER include '#' symbol in cardNumber
     if (parsedData.cardNumber) {
