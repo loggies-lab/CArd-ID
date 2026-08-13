@@ -3,6 +3,28 @@ import { GoogleGenAI } from "@google/genai";
 
 const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
 
+// Client Singleton Cache to reuse keep-alive HTTP sockets
+let vertexAiClientCache: GoogleGenAI | null = null;
+const apiKeyClientCache = new Map<string, GoogleGenAI>();
+
+function getGenAiClient(apiKey?: string): { ai: GoogleGenAI; modelName: string } {
+  if (apiKey) {
+    if (!apiKeyClientCache.has(apiKey)) {
+      apiKeyClientCache.set(apiKey, new GoogleGenAI({ apiKey }));
+    }
+    return { ai: apiKeyClientCache.get(apiKey)!, modelName: "gemini-2.0-flash" };
+  }
+
+  if (!vertexAiClientCache) {
+    vertexAiClientCache = new GoogleGenAI({
+      vertexai: true,
+      project: process.env.GOOGLE_CLOUD_PROJECT || "project-51730e6d-a5b5-4744-89d",
+      location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
+    });
+  }
+  return { ai: vertexAiClientCache, modelName: "gemini-2.5-flash" };
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -41,23 +63,15 @@ Return valid JSON with these exact keys:
 
 DO NOT output mock fallbacks or generic default values.`;
 
-    let ai: GoogleGenAI;
-    let modelName = "gemini-2.0-flash";
-
-    if (apiKey) {
-      console.log("--> Authenticating via Gemini Developer API Key...");
-      ai = new GoogleGenAI({ apiKey });
-    } else {
-      console.log("--> Authenticating via Google Cloud Vertex AI ADC...");
-      ai = new GoogleGenAI({
-        vertexai: true,
-        project: process.env.GOOGLE_CLOUD_PROJECT || "project-51730e6d-a5b5-4744-89d",
-        location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
-      });
-      modelName = "gemini-2.5-flash";
-    }
-
+    const { ai, modelName } = getGenAiClient(apiKey);
     let responseText: string | undefined;
+
+    // Optimized generation configuration: cap tokens & set low temperature for fast, deterministic output
+    const generationConfig = {
+      responseMimeType: "application/json",
+      maxOutputTokens: 350,
+      temperature: 0.1,
+    };
 
     try {
       const response = await ai.models.generateContent({
@@ -67,9 +81,7 @@ DO NOT output mock fallbacks or generic default values.`;
           { inlineData: { mimeType: "image/jpeg", data: frontClean } },
           { inlineData: { mimeType: "image/jpeg", data: backClean } },
         ],
-        config: {
-          responseMimeType: "application/json",
-        },
+        config: generationConfig,
       });
       responseText = response.text;
     } catch (modelErr: any) {
@@ -82,9 +94,7 @@ DO NOT output mock fallbacks or generic default values.`;
             { inlineData: { mimeType: "image/jpeg", data: frontClean } },
             { inlineData: { mimeType: "image/jpeg", data: backClean } },
           ],
-          config: {
-            responseMimeType: "application/json",
-          },
+          config: generationConfig,
         });
         responseText = response.text;
       } else {

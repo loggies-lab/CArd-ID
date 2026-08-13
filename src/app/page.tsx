@@ -6,8 +6,9 @@ import { FileDropzone } from "@/components/FileDropzone";
 import { CardTable } from "@/components/CardTable";
 import { CollectionTab } from "@/components/CollectionTab";
 import { useCollection } from "@/lib/useCollection";
+import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
 import { CardItem } from "@/types/card";
-import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck } from "lucide-react";
+import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "collection">("scanner");
@@ -25,25 +26,22 @@ export default function Home() {
     isSaved,
   } = useCollection();
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
   const processSingleCard = async (item: CardItem): Promise<CardItem> => {
     try {
       let frontBase64: string | null = null;
       let backBase64: string | null = null;
 
+      // Optimize and resize images on client before base64 transfer
       if (item.frontFile) {
-        frontBase64 = await fileToBase64(item.frontFile);
+        frontBase64 = await fileToOptimizedBase64(item.frontFile, 1024, 0.85);
+      } else if (item.frontPreview) {
+        frontBase64 = item.frontPreview;
       }
+
       if (item.backFile) {
-        backBase64 = await fileToBase64(item.backFile);
+        backBase64 = await fileToOptimizedBase64(item.backFile, 1024, 0.85);
+      } else if (item.backPreview) {
+        backBase64 = item.backPreview;
       }
 
       const res = await fetch("/api/identify", {
@@ -91,18 +89,29 @@ export default function Home() {
     setIsProcessing(true);
     setGlobalError(null);
 
-    setItems((prev) =>
-      prev.map((i) => (i.status === "idle" || i.status === "error" ? { ...i, status: "processing" } : i))
+    const pendingItems = items.filter(
+      (i) => i.status === "idle" || i.status === "error" || i.status === "processing"
     );
 
-    const updatedList = [...items];
+    if (pendingItems.length === 0) {
+      setIsProcessing(false);
+      return;
+    }
 
-    for (let idx = 0; idx < updatedList.length; idx++) {
-      const current = updatedList[idx];
-      if (current.status === "processing" || current.status === "idle" || current.status === "error") {
-        setItems((prev) =>
-          prev.map((item) => (item.id === current.id ? { ...item, status: "processing" } : item))
-        );
+    // Mark pending items as processing
+    setItems((prev) =>
+      prev.map((i) => (pendingItems.some((p) => p.id === i.id) ? { ...i, status: "processing" } : i))
+    );
+
+    // Parallel Concurrency Pool (4 simultaneous requests)
+    const CONCURRENCY_LIMIT = 4;
+    let pendingQueueIndex = 0;
+
+    const runWorker = async () => {
+      while (pendingQueueIndex < pendingItems.length) {
+        const queueIdx = pendingQueueIndex++;
+        const current = pendingItems[queueIdx];
+        if (!current) break;
 
         const result = await processSingleCard(current);
 
@@ -114,8 +123,12 @@ export default function Home() {
           setGlobalError(`Card ${current.prefix}: ${result.errorMessage}`);
         }
       }
-    }
+    };
 
+    const workerCount = Math.min(CONCURRENCY_LIMIT, pendingItems.length);
+    const workerPromises = Array.from({ length: workerCount }, () => runWorker());
+
+    await Promise.all(workerPromises);
     setIsProcessing(false);
   };
 
@@ -149,9 +162,14 @@ export default function Home() {
         <div className="relative overflow-hidden rounded-3xl border border-slate-800 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 p-8 shadow-2xl">
           <div className="absolute -top-24 -right-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none"></div>
           <div className="relative z-10 max-w-2xl space-y-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-mono font-bold text-cyan-300">
-              <Sparkles className="h-3.5 w-3.5" /> Card Dealer Pro (CDP) Standard Engine
-            </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-mono font-bold text-cyan-300">
+                <Sparkles className="h-3.5 w-3.5" /> Card Dealer Pro (CDP) Standard Engine
+              </span>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300">
+                <Zap className="h-3.5 w-3.5 text-emerald-400" /> High-Speed 4x Parallel Engine
+              </span>
+            </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
               {activeTab === "scanner"
                 ? "AI Sports Card Identification & Cataloging"
