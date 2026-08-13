@@ -1,0 +1,299 @@
+"use client";
+
+import React, { useRef } from "react";
+import { UploadCloud, Image as ImageIcon, RefreshCw, AlertTriangle, CheckCircle2, Trash2, ArrowLeftRight, Plus } from "lucide-react";
+import { CardItem } from "@/types/card";
+import { parseAndPairFiles } from "@/lib/pairing";
+
+interface FileDropzoneProps {
+  items: CardItem[];
+  setItems: React.Dispatch<React.SetStateAction<CardItem[]>>;
+  onIdentifyBatch: () => void;
+  isProcessing: boolean;
+}
+
+export function FileDropzone({ items, setItems, onIdentifyBatch, isProcessing }: FileDropzoneProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    const updatedItems = parseAndPairFiles(fileArray, items);
+    setItems(updatedItems);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleFiles(e.dataTransfer.files);
+  };
+
+  const handleAttachImage = (cardId: string, side: 'front' | 'back', file: File) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== cardId) return item;
+        const updatedFront = side === 'front' ? file : item.frontFile;
+        const updatedBack = side === 'back' ? file : item.backFile;
+        return {
+          ...item,
+          frontFile: updatedFront,
+          backFile: updatedBack,
+          frontPreview: updatedFront ? URL.createObjectURL(updatedFront) : item.frontPreview,
+          backPreview: updatedBack ? URL.createObjectURL(updatedBack) : item.backPreview,
+          isUnpaired: !updatedFront || !updatedBack,
+        };
+      })
+    );
+  };
+
+  const handleSwapImages = (cardId: string) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== cardId) return item;
+        return {
+          ...item,
+          frontFile: item.backFile,
+          backFile: item.frontFile,
+          frontPreview: item.backPreview,
+          backPreview: item.frontPreview,
+        };
+      })
+    );
+  };
+
+  const handleRemoveCard = (cardId: string) => {
+    setItems((prev) => prev.filter((i) => i.id !== cardId));
+  };
+
+  const unpairedCount = items.filter((i) => i.isUnpaired).length;
+  const pairedCount = items.length - unpairedCount;
+
+  return (
+    <div className="space-y-6">
+      {/* Primary Batch Dropzone */}
+      <div
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className="relative group cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed border-cyan-500/30 bg-slate-900/60 p-8 text-center backdrop-blur-xl transition-all duration-300 hover:border-cyan-400 hover:bg-slate-900/80 hover:shadow-2xl hover:shadow-cyan-500/10"
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="relative">
+            <div className="absolute -inset-2 rounded-full bg-cyan-500/20 blur-lg transition group-hover:bg-cyan-500/40"></div>
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-600 to-blue-600 shadow-xl">
+              <UploadCloud className="h-8 w-8 text-white animate-bounce" />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xl font-bold tracking-tight text-slate-100">
+              Drag & Drop Sports Card Images
+            </h3>
+            <p className="mt-1 text-sm text-slate-400">
+              Batch upload paired images (e.g. <code className="rounded bg-slate-800 px-1.5 py-0.5 text-cyan-300 font-mono">TCS-00000001-front.jpg</code> & <code className="rounded bg-slate-800 px-1.5 py-0.5 text-cyan-300 font-mono">TCS-00000001-back.jpg</code>)
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/80 border border-slate-700 px-3 py-1 text-xs text-slate-300 font-medium">
+              <ImageIcon className="h-3.5 w-3.5 text-cyan-400" /> Auto Prefix Pairing
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/80 border border-slate-700 px-3 py-1 text-xs text-slate-300 font-medium">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> CDP Schema Enforced
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Batch Summary & Controls */}
+      {items.length > 0 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-md">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-semibold text-slate-200">
+                Uploaded Cards: <span className="text-cyan-400 font-mono text-base">{items.length}</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-xs font-medium text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" /> {pairedCount} Paired
+              </span>
+
+              {unpairedCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/20 border border-amber-500/40 px-2.5 py-1 text-xs font-semibold text-amber-300 animate-pulse">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Unpaired Card ({unpairedCount})
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setItems([])}
+                disabled={isProcessing}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-600 hover:bg-slate-700 transition disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Clear All
+              </button>
+
+              <button
+                onClick={onIdentifyBatch}
+                disabled={isProcessing || items.length === 0}
+                className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-cyan-500/25 hover:from-cyan-400 hover:to-blue-500 transition active:scale-95 disabled:opacity-50"
+              >
+                {isProcessing ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" /> Processing Batch...
+                  </>
+                ) : (
+                  <>
+                    <SparklesIcon className="h-4 w-4" /> Run Vision Identification
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Cards Grid Preview & Pair Controls */}
+      {items.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className={`relative rounded-xl border p-4 transition-all bg-slate-900/60 backdrop-blur-md ${
+                item.isUnpaired
+                  ? "border-amber-500/40 ring-1 ring-amber-500/20"
+                  : "border-slate-800 hover:border-slate-700"
+              }`}
+            >
+              {/* Unpaired Card Badge */}
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold text-cyan-400 truncate max-w-[140px]">
+                    {item.prefix}
+                  </span>
+                  {item.isUnpaired ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-amber-500/20 border border-amber-500/50 px-2 py-0.5 text-[10px] font-bold text-amber-300 uppercase tracking-wider">
+                      <AlertTriangle className="h-3 w-3" /> Unpaired Card
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                      Paired
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1">
+                  {item.frontPreview && item.backPreview && (
+                    <button
+                      onClick={() => handleSwapImages(item.id)}
+                      title="Swap Front / Back"
+                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                    >
+                      <ArrowLeftRight className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleRemoveCard(item.id)}
+                    title="Remove Card"
+                    className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Front & Back Images */}
+              <div className="grid grid-cols-2 gap-2 pt-3">
+                {/* Front Image */}
+                <div className="relative aspect-[3/4] rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center justify-center overflow-hidden group">
+                  {item.frontPreview ? (
+                    <img
+                      src={item.frontPreview}
+                      alt="Front"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <label className="flex flex-col items-center justify-center cursor-pointer p-2 text-center hover:bg-slate-900 transition w-full h-full">
+                      <Plus className="h-5 w-5 text-slate-500 mb-1" />
+                      <span className="text-[11px] font-medium text-slate-400">Add Front</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) handleAttachImage(item.id, 'front', e.target.files[0]);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <div className="absolute bottom-1 left-1 bg-slate-900/90 border border-slate-700 text-[9px] font-bold text-slate-300 px-1.5 py-0.5 rounded">
+                    FRONT
+                  </div>
+                </div>
+
+                {/* Back Image */}
+                <div className="relative aspect-[3/4] rounded-lg bg-slate-950 border border-slate-800 flex flex-col items-center justify-center overflow-hidden group">
+                  {item.backPreview ? (
+                    <img
+                      src={item.backPreview}
+                      alt="Back"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <label className="flex flex-col items-center justify-center cursor-pointer p-2 text-center hover:bg-slate-900 transition w-full h-full">
+                      <Plus className="h-5 w-5 text-slate-500 mb-1" />
+                      <span className="text-[11px] font-medium text-amber-400">Add Back</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files?.[0]) handleAttachImage(item.id, 'back', e.target.files[0]);
+                        }}
+                      />
+                    </label>
+                  )}
+                  <div className="absolute bottom-1 left-1 bg-slate-900/90 border border-slate-700 text-[9px] font-bold text-slate-300 px-1.5 py-0.5 rounded">
+                    BACK
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SparklesIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={2}
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+      />
+    </svg>
+  );
+}
