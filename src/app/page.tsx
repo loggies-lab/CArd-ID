@@ -58,7 +58,11 @@ export default function Home() {
         backBase64 = await compressBase64DataUrl(item.backPreview, 800, 0.75);
       }
 
-      const res = await fetch("/api/identify", {
+      const apiUrl = typeof window !== "undefined" && (window.location.hostname.includes("web.app") || window.location.hostname.includes("firebaseapp.com"))
+        ? "https://temporary-spry-breeze-hbydz7x.vercel.app/api/identify"
+        : "/api/identify";
+
+      const res = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

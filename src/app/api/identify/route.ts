@@ -41,6 +41,19 @@ function parseCleanJson(rawText: string) {
   return JSON.parse(cleaned);
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -53,7 +66,7 @@ export async function POST(req: Request) {
     if (!frontInput || !backInput) {
       return NextResponse.json(
         { error: "Both front and back image base64 strings are required." },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -130,13 +143,13 @@ DO NOT output mock fallbacks or generic default values.`;
       parsedData.cardNumber = String(parsedData.cardNumber).replace(/#/g, "").trim();
     }
 
-    return NextResponse.json(parsedData);
+    return NextResponse.json(parsedData, { headers: corsHeaders });
   } catch (error: any) {
     console.error("=== API SERVER CRASH ERROR ===");
     console.error(error.stack || error);
     return NextResponse.json(
       { error: error.message || "Internal Server Error" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, X } from "lucide-react";
 
 interface HeaderBarProps {
   apiKey: string;
@@ -20,11 +21,83 @@ export function HeaderBar({
 }: HeaderBarProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleSaveKey = () => {
     setApiKey(tempKey);
     setShowConfig(false);
   };
+
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-lg w-full space-y-5 shadow-2xl relative">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <h3 className="text-base font-extrabold text-slate-100 flex items-center gap-2">
+            <Key className="h-4 w-4 text-cyan-400" /> API Authentication Options
+          </h3>
+          <button
+            onClick={() => setShowConfig(false)}
+            className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-4 text-xs text-slate-300">
+          <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 p-3.5 flex items-start gap-2.5">
+            <CheckCircle className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+            <span>
+              <strong>Primary Mode:</strong> Vertex AI using Google Cloud ADC credentials.
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-slate-200 font-bold mb-1.5 text-xs">
+              Gemini API Key Override:
+            </label>
+            <input
+              type="text"
+              value={tempKey}
+              onChange={(e) => setTempKey(e.target.value)}
+              placeholder="Paste your Gemini API Key (e.g. AIzaSy...)"
+              className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-3 text-xs font-mono text-cyan-300 focus:outline-none shadow-inner"
+            />
+            <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
+              If set, requests will prioritize this API key for Gemini 2.0 Flash. Get a free API key at{" "}
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="text-cyan-400 underline hover:text-cyan-300"
+              >
+                Google AI Studio
+              </a>
+              .
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-slate-800 pt-4">
+          <button
+            onClick={() => setShowConfig(false)}
+            className="px-4 py-2 rounded-xl border border-slate-800 text-xs font-bold text-slate-300 hover:bg-slate-800 transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveKey}
+            className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-xs font-bold text-white shadow-lg shadow-cyan-500/20 transition active:scale-95"
+          >
+            Save Settings
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
@@ -101,64 +174,8 @@ export function HeaderBar({
         </div>
       </div>
 
-      {/* Credentials Modal */}
-      {showConfig && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <Key className="h-4 w-4 text-cyan-400" /> API Authentication Options
-              </h3>
-              <button
-                onClick={() => setShowConfig(false)}
-                className="text-slate-400 hover:text-slate-200 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-slate-300">
-              <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/30 p-3 flex items-start gap-2">
-                <CheckCircle className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Primary Mode:</strong> Vertex AI using local ADC (<code className="font-mono text-cyan-300">~/.config/gcloud/application_default_credentials.json</code>).
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-slate-300 font-semibold mb-1">
-                  Optional Gemini API Key Override:
-                </label>
-                <input
-                  type="password"
-                  value={tempKey}
-                  onChange={(e) => setTempKey(e.target.value)}
-                  placeholder="AIzaSy..."
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-lg p-2 text-xs font-mono text-slate-100 focus:outline-none"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  If set, requests will prioritize this API key for Gemini 2.0 Flash. Leave empty to use standard Vertex AI ADC credentials.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 border-t border-slate-800 pt-3">
-              <button
-                onClick={() => setShowConfig(false)}
-                className="px-3 py-1.5 rounded-lg border border-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveKey}
-                className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-xs font-bold text-white shadow-lg shadow-cyan-600/20"
-              >
-                Save Settings
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Render Key Options Modal centered over screen via Portal */}
+      {showConfig && mounted && createPortal(modalContent, document.body)}
     </header>
   );
 }
