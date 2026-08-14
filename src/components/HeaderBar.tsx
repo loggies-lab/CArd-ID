@@ -121,7 +121,7 @@ export function HeaderBar({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              Powered by <code className="font-mono text-cyan-300">gemini-2.5-flash</code> Vision Pipeline
+              Powered by <code className="font-mono text-cyan-300">gemini-1.5-flash</code> Vision Pipeline
             </p>
           </div>
         </div>

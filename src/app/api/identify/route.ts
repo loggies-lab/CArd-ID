@@ -60,7 +60,7 @@ Return valid JSON with these exact keys:
 
     let responseText = "";
     let lastError = "";
-    const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-2.5-flash"];
+    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
 
     for (const modelName of modelsToTry) {
       try {
@@ -80,8 +80,11 @@ Return valid JSON with these exact keys:
           break;
         }
       } catch (mErr: any) {
-        lastError = mErr.message || String(mErr);
-        console.warn(`Model ${modelName} failed, trying fallback:`, lastError);
+        const errMsg = mErr.message || String(mErr);
+        if (!lastError || !errMsg.includes("no longer available")) {
+          lastError = errMsg;
+        }
+        console.warn(`Model ${modelName} failed, trying fallback:`, errMsg);
       }
     }
 

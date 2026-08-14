@@ -59,7 +59,7 @@ DO NOT output mock fallbacks or generic default values.`;
 
   let responseText = "";
   let lastError = "";
-  const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-2.5-flash"];
+  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
 
   for (const modelName of modelsToTry) {
     try {
@@ -81,8 +81,11 @@ DO NOT output mock fallbacks or generic default values.`;
         break;
       }
     } catch (mErr: any) {
-      lastError = mErr.message || String(mErr);
-      console.warn(`Model ${modelName} failed, trying fallback:`, lastError);
+      const errMsg = mErr.message || String(mErr);
+      if (!lastError || !errMsg.includes("no longer available")) {
+        lastError = errMsg;
+      }
+      console.warn(`Model ${modelName} failed, trying fallback:`, errMsg);
     }
   }
   if (!responseText) {
