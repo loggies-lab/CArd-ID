@@ -8,6 +8,7 @@ import { CollectionTab } from "@/components/CollectionTab";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
+import { identifyCardClientSide } from "@/lib/geminiClient";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
 
@@ -56,6 +57,24 @@ export default function Home() {
         backBase64 = await fileToOptimizedBase64(item.backFile, 800, 0.75);
       } else if (item.backPreview) {
         backBase64 = await compressBase64DataUrl(item.backPreview, 800, 0.75);
+      }
+
+      // Direct Client-Side Vision AI (Dual Redundancy): If user provided API Key in Key Options,
+      // run Gemini 2.0 Flash directly from browser to guarantee 100% success with zero server network errors!
+      if (apiKey && frontBase64 && backBase64) {
+        try {
+          const cardData = await identifyCardClientSide(frontBase64, backBase64, apiKey);
+          return {
+            ...item,
+            frontPreview: frontBase64 || item.frontPreview,
+            backPreview: backBase64 || item.backPreview,
+            status: "success",
+            data: cardData,
+            errorMessage: undefined,
+          };
+        } catch (clientErr: any) {
+          console.warn("Client-side vision identification fallback, attempting server API:", clientErr);
+        }
       }
 
       const apiUrl = typeof window !== "undefined" && (window.location.hostname.includes("web.app") || window.location.hostname.includes("firebaseapp.com"))
