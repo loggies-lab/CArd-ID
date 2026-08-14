@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { SavedCollectionItem } from "@/types/card";
+import { SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import {
@@ -21,6 +21,11 @@ import {
   CheckCircle,
   Filter,
   DollarSign,
+  Zap,
+  RefreshCw,
+  CheckSquare,
+  Square,
+  AlertCircle,
 } from "lucide-react";
 
 interface CollectionTabProps {
@@ -28,6 +33,7 @@ interface CollectionTabProps {
   removeCard: (id: string) => void;
   clearCollection: () => void;
   onInspectCard?: (card: SavedCollectionItem) => void;
+  updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
 }
 
 export function CollectionTab({
@@ -35,14 +41,29 @@ export function CollectionTab({
   removeCard,
   clearCollection,
   onInspectCard,
+  updateSavedCardDataBatch,
 }: CollectionTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSport, setSelectedSport] = useState("all");
   const [filterRookie, setFilterRookie] = useState(false);
   const [filterAuto, setFilterAuto] = useState(false);
   const [filterMem, setFilterMem] = useState(false);
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Multi-select Checkbox State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Bulk Comps Execution State
+  const [isBulkRunning, setIsBulkRunning] = useState(false);
+  const [bulkCancelRequested, setBulkCancelRequested] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    currentTitle: string;
+    pricedCount: number;
+  } | null>(null);
+  const [bulkSummaryMessage, setBulkSummaryMessage] = useState<string | null>(null);
 
   // Statistics calculation including Total Portfolio Worth
   const stats = useMemo(() => {
@@ -50,11 +71,15 @@ export function CollectionTab({
     const rookies = savedCards.filter((c) => c.data.isRookie).length;
     const autos = savedCards.filter((c) => c.data.isAutographed).length;
     const mems = savedCards.filter((c) => c.data.isMemorabilia).length;
-    
-    const valuedCards = savedCards.filter((c) => c.data.estimatedValue !== undefined && c.data.estimatedValue > 0);
+
+    const valuedCards = savedCards.filter(
+      (c) => c.data.estimatedValue !== undefined && c.data.estimatedValue > 0
+    );
     const portfolioValue = valuedCards.reduce((sum, c) => sum + (c.data.estimatedValue || 0), 0);
 
-    return { total, rookies, autos, mems, portfolioValue, valuedCount: valuedCards.length };
+    const unpricedCount = total - valuedCards.length;
+
+    return { total, rookies, autos, mems, portfolioValue, valuedCount: valuedCards.length, unpricedCount };
   }, [savedCards]);
 
   // Unique sports list for filter dropdown
@@ -90,8 +115,110 @@ export function CollectionTab({
     });
   }, [savedCards, searchTerm, selectedSport, filterRookie, filterAuto, filterMem]);
 
+  // Selection Handlers
+  const toggleSelectCard = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const isAllSelected = useMemo(() => {
+    if (filteredCards.length === 0) return false;
+    return filteredCards.every((c) => selectedIds.has(c.id));
+  }, [filteredCards, selectedIds]);
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredCards.map((c) => c.id)));
+    }
+  };
+
+  const selectUnpricedOnly = () => {
+    const unpriced = savedCards.filter(
+      (c) => c.data.estimatedValue === undefined || c.data.estimatedValue === 0
+    );
+    setSelectedIds(new Set(unpriced.map((c) => c.id)));
+  };
+
   const handleExportCSV = () => {
     exportSavedCollectionToCSV(filteredCards, `my_card_collection_${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+
+  // Rate-limited Bulk Comps Execution Engine
+  const handleRunBulkComps = async () => {
+    if (selectedIds.size === 0 || isBulkRunning) return;
+
+    const cardsToValuate = savedCards.filter((c) => selectedIds.has(c.id));
+    if (cardsToValuate.length === 0) return;
+
+    setIsBulkRunning(true);
+    setBulkCancelRequested(false);
+    setBulkSummaryMessage(null);
+
+    const total = cardsToValuate.length;
+    let pricedSuccessfully = 0;
+    const pendingUpdates: { id: string; data: CDPCardSchema }[] = [];
+
+    for (let i = 0; i < total; i++) {
+      if (bulkCancelRequested) break;
+
+      const item = cardsToValuate[i];
+      const cardTitle = generateCdpTitle(item.data);
+
+      setBulkProgress({
+        current: i + 1,
+        total,
+        currentTitle: cardTitle,
+        pricedCount: pricedSuccessfully,
+      });
+
+      try {
+        const res = await fetch("/api/comps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: cardTitle }),
+        });
+
+        if (res.ok) {
+          const compsData = await res.json();
+          const estVal = compsData.estimatedMarketValue || compsData.medianPrice || 0;
+
+          if (estVal > 0) {
+            const updatedData: CDPCardSchema = {
+              ...item.data,
+              estimatedValue: estVal,
+              valueLastUpdated: new Date().toISOString(),
+            };
+            pendingUpdates.push({ id: item.id, data: updatedData });
+            pricedSuccessfully++;
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to fetch comps for ${cardTitle}:`, err);
+      }
+
+      // 250ms throttle pause between requests to respect eBay rate limits
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    if (pendingUpdates.length > 0 && updateSavedCardDataBatch) {
+      updateSavedCardDataBatch(pendingUpdates);
+    }
+
+    setIsBulkRunning(false);
+    setBulkProgress(null);
+    setBulkSummaryMessage(
+      `Completed valuation! Applied market values to ${pricedSuccessfully} of ${total} selected card${total > 1 ? "s" : ""}.`
+    );
+    setTimeout(() => setBulkSummaryMessage(null), 5000);
   };
 
   return (
@@ -151,6 +278,52 @@ export function CollectionTab({
         </div>
       </div>
 
+      {/* Bulk Comps Progress Banner */}
+      {isBulkRunning && bulkProgress && (
+        <div className="rounded-2xl border border-cyan-500/40 bg-slate-900/90 p-4 backdrop-blur-xl space-y-3 animate-fade-in shadow-2xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-cyan-400 animate-spin" />
+              <span className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider">
+                eBay Comps Auto-Valuation in Progress ({bulkProgress.current} / {bulkProgress.total})
+              </span>
+            </div>
+            <button
+              onClick={() => setBulkCancelRequested(true)}
+              className="text-xs font-mono font-bold text-rose-400 hover:text-rose-300 underline"
+            >
+              Cancel Batch
+            </button>
+          </div>
+
+          <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
+            <div
+              className="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full transition-all duration-300"
+              style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
+            ></div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs font-mono text-slate-300">
+            <span className="truncate max-w-md text-slate-400">
+              Querying eBay: <strong className="text-white">{bulkProgress.currentTitle}</strong>
+            </span>
+            <span className="text-emerald-400 font-bold">
+              ✓ {bulkProgress.pricedCount} Cards Priced
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Toast Notification */}
+      {bulkSummaryMessage && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs font-mono font-bold text-emerald-300 flex items-center justify-between animate-fade-in">
+          <span>✓ {bulkSummaryMessage}</span>
+          <button onClick={() => setBulkSummaryMessage(null)} className="text-emerald-400 hover:text-white">
+            Dismiss ✕
+          </button>
+        </div>
+      )}
+
       {/* Toolbar & Filter Section */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -166,8 +339,29 @@ export function CollectionTab({
             />
           </div>
 
-          {/* Right Action Controls */}
+          {/* Action Controls & Bulk Runner Button */}
           <div className="flex items-center gap-2 flex-wrap">
+            {/* BULK COMPS RUNNER BUTTON */}
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleRunBulkComps}
+                disabled={isBulkRunning}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-50 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition active:scale-95 animate-pulse"
+              >
+                <Zap className="h-4 w-4 fill-amber-300 text-amber-300" /> Run Comps on Selected ({selectedIds.size})
+              </button>
+            )}
+
+            {/* Select Unpriced Shortcut */}
+            {stats.unpricedCount > 0 && (
+              <button
+                onClick={selectUnpricedOnly}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 text-xs font-bold text-emerald-300 transition"
+              >
+                <CheckSquare className="h-3.5 w-3.5" /> Select Unpriced ({stats.unpricedCount})
+              </button>
+            )}
+
             {/* View Mode Toggle */}
             <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950 p-1">
               <button
@@ -269,6 +463,15 @@ export function CollectionTab({
             🏷️ Memorabilia Only
           </button>
 
+          {selectedIds.size > 0 && (
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-amber-400 hover:text-amber-300 underline underline-offset-2 ml-auto font-mono"
+            >
+              Deselect All ({selectedIds.size})
+            </button>
+          )}
+
           {(searchTerm || selectedSport !== "all" || filterRookie || filterAuto || filterMem) && (
             <button
               onClick={() => {
@@ -308,10 +511,15 @@ export function CollectionTab({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {filteredCards.map((item) => {
             const card = item.data;
+            const isSelected = selectedIds.has(item.id);
             return (
               <div
                 key={item.id}
-                className="group relative rounded-2xl border border-slate-800 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900 transition-all duration-300 overflow-hidden shadow-xl flex flex-col justify-between"
+                className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden shadow-xl flex flex-col justify-between ${
+                  isSelected
+                    ? "border-cyan-500 bg-slate-900 ring-2 ring-cyan-500/50"
+                    : "border-slate-800 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900"
+                }`}
               >
                 {/* Images Preview Section */}
                 <div className="relative h-48 bg-slate-950 p-2 flex items-center justify-center gap-2 overflow-hidden">
@@ -355,8 +563,14 @@ export function CollectionTab({
                     </div>
                   )}
 
-                  {/* Top Badges & Actions */}
-                  <div className="absolute top-2 left-2 flex items-center gap-1 flex-wrap">
+                  {/* Top Badges & Selection Checkbox */}
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => toggleSelectCard(item.id)}
+                      className="rounded-md bg-slate-950/90 border border-slate-800 p-1 text-cyan-300 hover:bg-cyan-500 hover:text-white transition"
+                    >
+                      {isSelected ? <CheckSquare className="h-4 w-4 text-cyan-400" /> : <Square className="h-4 w-4 text-slate-500" />}
+                    </button>
                     <span className="rounded-md bg-slate-950/90 border border-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
                       #{card.cardNumber || item.prefix}
                     </span>
@@ -447,12 +661,21 @@ export function CollectionTab({
           })}
         </div>
       ) : (
-        /* TABLE VIEW */
+        /* TABLE VIEW WITH MULTI-SELECT CHECKBOXES */
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="border-b border-slate-800 bg-slate-950 text-slate-400 uppercase font-mono tracking-wider">
                 <tr>
+                  <th className="p-3 w-10 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-800 accent-cyan-500 cursor-pointer h-4 w-4"
+                      title="Select All Cards"
+                    />
+                  </th>
                   <th className="p-3">Card / Thumb</th>
                   <th className="p-3 min-w-[220px]">CDP Title</th>
                   <th className="p-3 font-mono font-bold text-emerald-400">Value ($)</th>
@@ -469,8 +692,23 @@ export function CollectionTab({
               <tbody className="divide-y divide-slate-800/60 text-slate-200">
                 {filteredCards.map((item) => {
                   const card = item.data;
+                  const isSelected = selectedIds.has(item.id);
+
                   return (
-                    <tr key={item.id} className="hover:bg-slate-800/40 transition">
+                    <tr
+                      key={item.id}
+                      className={`transition ${
+                        isSelected ? "bg-cyan-500/10 font-medium" : "hover:bg-slate-800/40"
+                      }`}
+                    >
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectCard(item.id)}
+                          className="rounded border-slate-800 accent-cyan-500 cursor-pointer h-4 w-4"
+                        />
+                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           {item.frontPreview ? (

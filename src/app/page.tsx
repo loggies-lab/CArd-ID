@@ -24,6 +24,7 @@ export default function Home() {
     saveCard,
     saveBatch,
     updateSavedCardData,
+    updateSavedCardDataBatch,
     removeCard,
     clearCollection,
     isSaved,
@@ -259,6 +260,7 @@ export default function Home() {
               removeCard={removeCard}
               clearCollection={clearCollection}
               onInspectCard={(card) => setInspectingCard(card)}
+              updateSavedCardDataBatch={updateSavedCardDataBatch}
             />
           </section>
         )}

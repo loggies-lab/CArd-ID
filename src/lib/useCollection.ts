@@ -139,6 +139,15 @@ export function useCollection() {
     updateStorage(updated);
   };
 
+  const updateSavedCardDataBatch = (updates: { id: string; data: CDPCardSchema }[]) => {
+    const updateMap = new Map(updates.map((u) => [u.id, u.data]));
+    const updated = savedCards.map((c) => {
+      const newData = updateMap.get(c.id);
+      return newData ? { ...c, data: newData } : c;
+    });
+    updateStorage(updated);
+  };
+
   const isSaved = (id: string) => {
     return savedCards.some((c) => c.id === id);
   };
@@ -149,6 +158,7 @@ export function useCollection() {
     saveCard,
     saveBatch,
     updateSavedCardData,
+    updateSavedCardDataBatch,
     removeCard,
     clearCollection,
     isSaved,
