@@ -57,21 +57,32 @@ DO NOT output mock fallbacks or generic default values.`;
   const frontClean = cleanBase64(frontBase64);
   const backClean = cleanBase64(backBase64);
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: [
-      { text: promptText },
-      { inlineData: { mimeType: "image/jpeg", data: frontClean } },
-      { inlineData: { mimeType: "image/jpeg", data: backClean } },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      maxOutputTokens: 2048,
-      temperature: 0.1,
-    },
-  });
+  let responseText = "";
+  const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash"];
 
-  const responseText = response.text;
+  for (const modelName of modelsToTry) {
+    try {
+      const res = await ai.models.generateContent({
+        model: modelName,
+        contents: [
+          { text: promptText },
+          { inlineData: { mimeType: "image/jpeg", data: frontClean } },
+          { inlineData: { mimeType: "image/jpeg", data: backClean } },
+        ],
+        config: {
+          responseMimeType: "application/json",
+          maxOutputTokens: 2048,
+          temperature: 0.1,
+        },
+      });
+      if (res.text) {
+        responseText = res.text;
+        break;
+      }
+    } catch (mErr: any) {
+      console.warn(`Model ${modelName} failed, trying fallback:`, mErr.message);
+    }
+  }
   if (!responseText) {
     throw new Error("Empty response received from Gemini Vision AI.");
   }

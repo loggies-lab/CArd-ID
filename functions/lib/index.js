@@ -42,18 +42,30 @@ Return valid JSON with these exact keys:
 - isAutographed (boolean)
 - isMemorabilia (boolean)
 - isNumbered (boolean)`;
-        const response = await ai.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: [
-                { text: promptText },
-                { inlineData: { mimeType: "image/jpeg", data: frontClean } },
-                { inlineData: { mimeType: "image/jpeg", data: backClean } },
-            ],
-            config: {
-                responseMimeType: "application/json",
-            },
-        });
-        const responseText = response.text;
+        let responseText = "";
+        const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash"];
+        for (const modelName of modelsToTry) {
+            try {
+                const res = await ai.models.generateContent({
+                    model: modelName,
+                    contents: [
+                        { text: promptText },
+                        { inlineData: { mimeType: "image/jpeg", data: frontClean } },
+                        { inlineData: { mimeType: "image/jpeg", data: backClean } },
+                    ],
+                    config: {
+                        responseMimeType: "application/json",
+                    },
+                });
+                if (res.text) {
+                    responseText = res.text;
+                    break;
+                }
+            }
+            catch (mErr) {
+                console.warn(`Model ${modelName} failed, trying fallback:`, mErr.message);
+            }
+        }
         if (!responseText) {
             throw new https_1.HttpsError("internal", "Empty response from Gemini model.");
         }
