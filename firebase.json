@@ -9,10 +9,11 @@
       "**/.*",
       "**/node_modules/**"
     ],
-    "rewrites": [
+    "redirects": [
       {
-        "source": "**",
-        "destination": "/index.html"
+        "source": "/:path*",
+        "destination": "https://temporary-nimble-azure-2u221wx.vercel.app/:path*",
+        "type": 302
       }
     ]
   }
