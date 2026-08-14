@@ -101,11 +101,7 @@ export default function Home() {
         }
       }
 
-      const apiUrl = typeof window !== "undefined" && (window.location.hostname.includes("web.app") || window.location.hostname.includes("firebaseapp.com"))
-        ? "https://temporary-spry-breeze-hbydz7x.vercel.app/api/identify"
-        : "/api/identify";
-
-      const res = await fetch(apiUrl, {
+      const res = await fetch("/api/identify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

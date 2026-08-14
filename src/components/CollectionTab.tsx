@@ -232,11 +232,7 @@ export function CollectionTab({
       });
 
       try {
-        const apiUrl = typeof window !== "undefined" && (window.location.hostname.includes("web.app") || window.location.hostname.includes("firebaseapp.com"))
-          ? "https://temporary-spry-breeze-hbydz7x.vercel.app/api/comps"
-          : "/api/comps";
-
-        const res = await fetch(apiUrl, {
+        const res = await fetch("/api/comps", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: cardTitle }),
