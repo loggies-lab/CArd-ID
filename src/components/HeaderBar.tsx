@@ -27,6 +27,10 @@ export function HeaderBar({
     setMounted(true);
   }, []);
 
+  useEffect(() => {
+    setTempKey(apiKey);
+  }, [apiKey]);
+
   const handleSaveKey = () => {
     setApiKey(tempKey);
     setShowConfig(false);

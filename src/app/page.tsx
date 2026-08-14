@@ -16,9 +16,28 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"scanner" | "collection">("scanner");
   const [items, setItems] = useState<CardItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKeyState] = useState("");
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [inspectingCard, setInspectingCard] = useState<CardItem | SavedCollectionItem | null>(null);
+
+  // Load saved API Key from localStorage on mount
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedKey = localStorage.getItem("CARD_ID_GEMINI_API_KEY");
+      if (storedKey) setApiKeyState(storedKey);
+    }
+  }, []);
+
+  const setApiKey = (key: string) => {
+    setApiKeyState(key);
+    if (typeof window !== "undefined") {
+      if (key) {
+        localStorage.setItem("CARD_ID_GEMINI_API_KEY", key);
+      } else {
+        localStorage.removeItem("CARD_ID_GEMINI_API_KEY");
+      }
+    }
+  };
 
   const {
     savedCards,
@@ -73,7 +92,12 @@ export default function Home() {
             errorMessage: undefined,
           };
         } catch (clientErr: any) {
-          console.warn("Client-side vision identification fallback, attempting server API:", clientErr);
+          console.error("Client-side Gemini Vision processing error:", clientErr);
+          return {
+            ...item,
+            status: "error",
+            errorMessage: clientErr.message || "Gemini Vision AI processing failed.",
+          };
         }
       }
 
