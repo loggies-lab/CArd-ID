@@ -58,7 +58,8 @@ Return valid JSON with these exact keys:
 - isNumbered (boolean)`;
 
       let responseText = "";
-      const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash"];
+      let lastError = "";
+      const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-2.5-flash"];
 
       for (const modelName of modelsToTry) {
         try {
@@ -78,12 +79,13 @@ Return valid JSON with these exact keys:
             break;
           }
         } catch (mErr: any) {
-          console.warn(`Model ${modelName} failed, trying fallback:`, mErr.message);
+          lastError = mErr.message || String(mErr);
+          console.warn(`Model ${modelName} failed, trying fallback:`, lastError);
         }
       }
 
       if (!responseText) {
-        throw new HttpsError("internal", "Empty response from Gemini model.");
+        throw new HttpsError("internal", lastError || "Gemini Vision AI processing failed.");
       }
 
       let parsed = JSON.parse(responseText);
