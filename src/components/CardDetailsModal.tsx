@@ -3,13 +3,47 @@
 import React, { useState, useEffect } from "react";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { generateCdpTitle } from "@/lib/titleGenerator";
-import { X, Save, Sparkles, Image as ImageIcon, CheckCircle, Tag, ShieldCheck, MapPin, Award, Copy, Check } from "lucide-react";
+import {
+  X,
+  Save,
+  Sparkles,
+  Image as ImageIcon,
+  CheckCircle,
+  Tag,
+  ShieldCheck,
+  MapPin,
+  Award,
+  Copy,
+  Check,
+  TrendingUp,
+  RefreshCw,
+  ExternalLink,
+  DollarSign,
+  Search,
+  AlertCircle,
+} from "lucide-react";
 
 interface CardDetailsModalProps {
   card: CardItem | SavedCollectionItem | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (updatedCardId: string, updatedData: CDPCardSchema) => void;
+}
+
+interface EbaySaleItem {
+  title: string;
+  price: number;
+  currency: string;
+  imageUrl: string;
+  itemWebUrl: string;
+}
+
+interface EbayCompsResult {
+  totalFound: number;
+  averagePrice: number;
+  minPrice: number;
+  maxPrice: number;
+  recentSales: EbaySaleItem[];
 }
 
 export function CardDetailsModal({
@@ -20,6 +54,12 @@ export function CardDetailsModal({
 }: CardDetailsModalProps) {
   const [activeSide, setActiveSide] = useState<"front" | "back">("front");
   const [copiedTitle, setCopiedTitle] = useState(false);
+
+  // eBay Comps State
+  const [compsResult, setCompsResult] = useState<EbayCompsResult | null>(null);
+  const [isFetchingComps, setIsFetchingComps] = useState(false);
+  const [compsError, setCompsError] = useState<string | null>(null);
+  const [customCompsQuery, setCustomCompsQuery] = useState("");
 
   // Editable form state initialized from card data
   const [formData, setFormData] = useState<CDPCardSchema>({
@@ -65,6 +105,11 @@ export function CardDetailsModal({
       });
       setActiveSide("front");
       setCopiedTitle(false);
+
+      const generatedQuery = generateCdpTitle(card.data);
+      setCustomCompsQuery(generatedQuery);
+      setCompsResult(null);
+      setCompsError(null);
     }
   }, [card]);
 
@@ -90,6 +135,36 @@ export function CardDetailsModal({
     navigator.clipboard.writeText(cdpTitle);
     setCopiedTitle(true);
     setTimeout(() => setCopiedTitle(false), 2500);
+  };
+
+  const handleFetchComps = async () => {
+    const queryToUse = (customCompsQuery || cdpTitle).trim();
+    if (!queryToUse) return;
+
+    setIsFetchingComps(true);
+    setCompsError(null);
+
+    try {
+      const res = await fetch("/api/comps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: queryToUse }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setCompsError(data.error || "Failed to fetch eBay sales comps.");
+        setCompsResult(null);
+      } else {
+        setCompsResult(data);
+      }
+    } catch (err: any) {
+      setCompsError(err.message || "Failed to connect to eBay Comps API.");
+      setCompsResult(null);
+    } finally {
+      setIsFetchingComps(false);
+    }
   };
 
   return (
@@ -524,6 +599,128 @@ export function CardDetailsModal({
                 />
               </div>
             </div>
+          </div>
+
+          {/* SECTION E: Real-Time eBay Market Sold Comps */}
+          <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-emerald-400" />
+                <h4 className="text-sm font-bold text-slate-100 uppercase tracking-wider">
+                  eBay Market Sales Comps
+                </h4>
+              </div>
+
+              {/* Search Query Input & Fetch Button */}
+              <div className="flex items-center gap-2 flex-1 max-w-lg">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={customCompsQuery}
+                    onChange={(e) => setCustomCompsQuery(e.target.value)}
+                    placeholder="Search eBay comps..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-900 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-mono text-slate-100 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleFetchComps}
+                  disabled={isFetchingComps || !customCompsQuery.trim()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-xs font-bold text-white shadow-md transition active:scale-95 shrink-0"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${isFetchingComps ? "animate-spin" : ""}`} />
+                  {isFetchingComps ? "Fetching..." : "Fetch Comps"}
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {compsError && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-mono text-rose-300 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-rose-400 shrink-0" />
+                <span>{compsError}</span>
+              </div>
+            )}
+
+            {/* Comps Summary Cards & Results */}
+            {compsResult && (
+              <div className="space-y-4">
+                {/* Stats Header Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Average Price</span>
+                    <span className="text-lg font-black text-emerald-400 font-mono">${compsResult.averagePrice.toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Lowest Price</span>
+                    <span className="text-lg font-black text-cyan-400 font-mono">${compsResult.minPrice.toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Highest Price</span>
+                    <span className="text-lg font-black text-amber-400 font-mono">${compsResult.maxPrice.toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Listings Found</span>
+                    <span className="text-lg font-black text-slate-200 font-mono">{compsResult.totalFound}</span>
+                  </div>
+                </div>
+
+                {/* Sales Listings Grid */}
+                {compsResult.recentSales.length > 0 ? (
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                      Recent Market Listings
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {compsResult.recentSales.map((sale, idx) => (
+                        <div
+                          key={idx}
+                          className="flex items-center gap-3 bg-slate-900 border border-slate-800/80 p-2.5 rounded-xl hover:border-slate-700 transition"
+                        >
+                          <div className="h-12 w-12 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center">
+                            {sale.imageUrl ? (
+                              <img src={sale.imageUrl} alt={sale.title} className="h-full w-full object-cover" />
+                            ) : (
+                              <DollarSign className="h-5 w-5 text-slate-600" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-xs font-semibold text-slate-200 line-clamp-1" title={sale.title}>
+                              {sale.title}
+                            </h5>
+                            <span className="text-xs font-mono font-black text-emerald-400 block mt-0.5">
+                              ${sale.price.toFixed(2)} {sale.currency}
+                            </span>
+                          </div>
+
+                          {sale.itemWebUrl && (
+                            <a
+                              href={sale.itemWebUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-cyan-600 text-slate-400 hover:text-white transition shrink-0"
+                              title="View Listing on eBay"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400 font-mono text-center py-4 bg-slate-900/40 rounded-xl">
+                    No matching sales comps found for &quot;{customCompsQuery}&quot;. Try adjusting search keywords.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Modal Footer Controls */}
