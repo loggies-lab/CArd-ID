@@ -2,23 +2,31 @@
 
 import { useState, useEffect } from "react";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
-import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
+import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 
 const STORAGE_KEY = "card_id_online_collection_v1";
 
 /**
- * Converts blob: URLs or File instances to permanent base64 Data URLs
- * to ensure images persist across page refreshes.
+ * Converts blob: URLs or File instances to permanent compact base64 Data URLs
+ * to ensure images fit safely within localStorage quota (5MB limit).
  */
 async function ensureDataUrl(preview?: string, file?: File | null): Promise<string | undefined> {
   if (!preview) return undefined;
-  if (preview.startsWith("data:")) return preview;
 
   if (file) {
     try {
-      return await fileToOptimizedBase64(file, 800, 0.85);
+      // Use compact 350px max dimension for localStorage thumbnails (~15KB per image)
+      return await fileToOptimizedBase64(file, 350, 0.65);
     } catch (e) {
       console.error("Failed to convert File to base64 Data URL:", e);
+    }
+  }
+
+  if (preview.startsWith("data:")) {
+    try {
+      return await compressBase64DataUrl(preview, 350, 0.65);
+    } catch (e) {
+      return preview;
     }
   }
 
@@ -26,12 +34,15 @@ async function ensureDataUrl(preview?: string, file?: File | null): Promise<stri
     try {
       const response = await fetch(preview);
       const blob = await response.blob();
-      return new Promise((resolve) => {
+      const rawBase64 = await new Promise<string>((resolve) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = () => resolve(undefined);
+        reader.onerror = () => resolve("");
         reader.readAsDataURL(blob);
       });
+      if (rawBase64) {
+        return await compressBase64DataUrl(rawBase64, 350, 0.65);
+      }
     } catch (e) {
       console.error("Failed to convert blob URL to base64 Data URL:", e);
       return undefined;
@@ -66,13 +77,46 @@ export function useCollection() {
     }
   }, []);
 
-  // Storage updater helper
+  // Multi-tiered Storage updater helper with QuotaExceededError recovery
   const updateStorage = (updated: SavedCollectionItem[]) => {
     setSavedCards(updated);
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     } catch (e) {
-      console.error("Failed to save collection to localStorage:", e);
+      console.warn("localStorage quota exceeded. Executing multi-tiered storage recovery...", e);
+
+      // Attempt 1: Strip image previews from older cards while preserving ALL CDP card metadata & prices
+      const lightweight = updated.map((item, idx) => {
+        // Retain preview thumbnails only for the 15 most recently added cards
+        if (idx < updated.length - 15) {
+          return {
+            ...item,
+            frontPreview: undefined,
+            backPreview: undefined,
+          };
+        }
+        return item;
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(lightweight));
+        console.log("Successfully saved collection using lightweight storage format.");
+      } catch (err2) {
+        // Attempt 2: Clear all image previews, guaranteeing 100% of metadata, player names & valuations fit safely
+        const metadataOnly = updated.map((item) => ({
+          ...item,
+          frontPreview: undefined,
+          backPreview: undefined,
+        }));
+
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(metadataOnly));
+          console.log("Saved collection metadata successfully (image previews cleared to preserve quota).");
+        } catch (err3) {
+          console.error("Critical localStorage quota failure:", err3);
+        }
+      }
     }
   };
 
@@ -92,37 +136,34 @@ export function useCollection() {
       data: item.data,
     };
 
-    updateStorage([newItem, ...savedCards]);
+    const updated = [newItem, ...savedCards];
+    updateStorage(updated);
     return true;
   };
 
   const saveBatch = async (items: CardItem[]): Promise<number> => {
-    const validItems = items.filter((i) => i.status === "success" && i.data);
-    let addedCount = 0;
-    const newItems: SavedCollectionItem[] = [...savedCards];
+    const validItems = items.filter((item) => item.data && !savedCards.some((c) => c.id === item.id));
 
-    for (const item of validItems) {
-      if (!newItems.some((c) => c.id === item.id) && item.data) {
+    if (validItems.length === 0) return 0;
+
+    const newSavedItems: SavedCollectionItem[] = await Promise.all(
+      validItems.map(async (item) => {
         const frontPreview = await ensureDataUrl(item.frontPreview, item.frontFile);
         const backPreview = await ensureDataUrl(item.backPreview, item.backFile);
-
-        newItems.unshift({
+        return {
           id: item.id,
           prefix: item.prefix,
           frontPreview,
           backPreview,
           dateAdded: new Date().toISOString(),
-          data: item.data,
-        });
-        addedCount++;
-      }
-    }
+          data: item.data!,
+        };
+      })
+    );
 
-    if (addedCount > 0) {
-      updateStorage(newItems);
-    }
-
-    return addedCount;
+    const updated = [...newSavedItems, ...savedCards];
+    updateStorage(updated);
+    return newSavedItems.length;
   };
 
   const removeCard = (id: string) => {

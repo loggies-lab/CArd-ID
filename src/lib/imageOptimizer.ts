@@ -10,7 +10,7 @@ export async function fileToOptimizedBase64(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     // If file is already smaller than 150KB, read directly without re-encoding
-    if (file.size < 150 * 1024) {
+    if (file.size < 150 * 1024 && maxDimension >= 800) {
       const reader = new FileReader();
       reader.readAsDataURL(file);
       reader.onload = () => resolve(reader.result as string);
@@ -65,5 +65,54 @@ export async function fileToOptimizedBase64(
     };
 
     img.src = url;
+  });
+}
+
+/**
+ * Downscales an existing base64 Data URL to a tiny thumbnail (e.g. 300px max, 0.6 quality)
+ * specifically designed to fit 100s of items inside browser localStorage (5MB limit).
+ */
+export async function compressBase64DataUrl(
+  base64Str: string,
+  maxDimension = 300,
+  quality = 0.6
+): Promise<string> {
+  if (!base64Str || !base64Str.startsWith("data:")) return base64Str;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(base64Str);
+        return;
+      }
+
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "medium";
+      ctx.drawImage(img, 0, 0, width, height);
+
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+
+    img.onerror = () => resolve(base64Str);
+    img.src = base64Str;
   });
 }
