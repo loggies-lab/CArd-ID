@@ -36,13 +36,19 @@ interface EbaySaleItem {
   currency: string;
   imageUrl: string;
   itemWebUrl: string;
+  isOutlier?: boolean;
 }
 
 interface EbayCompsResult {
   totalFound: number;
+  medianPrice: number;
+  estimatedMarketValue: number;
   averagePrice: number;
   minPrice: number;
   maxPrice: number;
+  filteredMinPrice: number;
+  filteredMaxPrice: number;
+  outlierCount: number;
   recentSales: EbaySaleItem[];
 }
 
@@ -648,24 +654,50 @@ export function CardDetailsModal({
               <div className="space-y-4">
                 {/* Stats Header Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Average Price</span>
-                    <span className="text-lg font-black text-emerald-400 font-mono">${compsResult.averagePrice.toFixed(2)}</span>
+                  {/* Estimated Fair Market Value */}
+                  <div className="bg-gradient-to-br from-cyan-950/80 to-slate-900 p-3 rounded-xl border border-cyan-500/30">
+                    <span className="text-[10px] text-cyan-300 font-mono font-bold uppercase block tracking-wider">
+                      Est. Fair Value
+                    </span>
+                    <span className="text-xl font-black text-emerald-400 font-mono">
+                      ${compsResult.estimatedMarketValue.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block font-mono">Outlier-Cleaned Avg</span>
                   </div>
 
+                  {/* Median Price */}
                   <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Lowest Price</span>
-                    <span className="text-lg font-black text-cyan-400 font-mono">${compsResult.minPrice.toFixed(2)}</span>
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Median Price</span>
+                    <span className="text-lg font-black text-cyan-300 font-mono">
+                      ${compsResult.medianPrice.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block font-mono">50th Percentile</span>
                   </div>
 
+                  {/* Clean Price Range */}
                   <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Highest Price</span>
-                    <span className="text-lg font-black text-amber-400 font-mono">${compsResult.maxPrice.toFixed(2)}</span>
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Consensus Range</span>
+                    <span className="text-sm font-black text-slate-200 font-mono block mt-1">
+                      ${compsResult.filteredMinPrice.toFixed(2)} - ${compsResult.filteredMaxPrice.toFixed(2)}
+                    </span>
+                    <span className="text-[9px] text-slate-400 block font-mono">Core Price Band</span>
                   </div>
 
+                  {/* Sample & Outlier Filter Status */}
                   <div className="bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Listings Found</span>
-                    <span className="text-lg font-black text-slate-200 font-mono">{compsResult.totalFound}</span>
+                    <span className="text-[10px] text-slate-400 font-mono uppercase block">Sample & Filtering</span>
+                    <span className="text-xs font-mono font-bold text-slate-200 block mt-1">
+                      {compsResult.totalFound} Sales Scanned
+                    </span>
+                    {compsResult.outlierCount > 0 ? (
+                      <span className="text-[9px] text-amber-400 font-mono font-bold block mt-0.5">
+                        ⚡ {compsResult.outlierCount} Outlier Excluded
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-emerald-400 font-mono block mt-0.5">
+                        ✓ Clean Uniform Sample
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -673,14 +705,18 @@ export function CardDetailsModal({
                 {compsResult.recentSales.length > 0 ? (
                   <div className="space-y-2">
                     <span className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
-                      Recent Market Listings
+                      Recent Market Listings ({compsResult.recentSales.length})
                     </span>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {compsResult.recentSales.map((sale, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center gap-3 bg-slate-900 border border-slate-800/80 p-2.5 rounded-xl hover:border-slate-700 transition"
+                          className={`flex items-center gap-3 bg-slate-900 border p-2.5 rounded-xl transition ${
+                            sale.isOutlier
+                              ? "border-amber-500/40 bg-amber-500/5 opacity-80"
+                              : "border-slate-800/80 hover:border-slate-700"
+                          }`}
                         >
                           <div className="h-12 w-12 shrink-0 bg-slate-950 rounded-lg overflow-hidden border border-slate-800 flex items-center justify-center">
                             {sale.imageUrl ? (
@@ -691,10 +727,19 @@ export function CardDetailsModal({
                           </div>
 
                           <div className="flex-1 min-w-0">
-                            <h5 className="text-xs font-semibold text-slate-200 line-clamp-1" title={sale.title}>
-                              {sale.title}
-                            </h5>
-                            <span className="text-xs font-mono font-black text-emerald-400 block mt-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h5 className="text-xs font-semibold text-slate-200 line-clamp-1 flex-1" title={sale.title}>
+                                {sale.title}
+                              </h5>
+                              {sale.isOutlier && (
+                                <span className="rounded bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[9px] font-mono font-bold text-amber-300">
+                                  Outlier
+                                </span>
+                              )}
+                            </div>
+                            <span className={`text-xs font-mono font-black block mt-0.5 ${
+                              sale.isOutlier ? "text-amber-300" : "text-emerald-400"
+                            }`}>
                               ${sale.price.toFixed(2)} {sale.currency}
                             </span>
                           </div>
