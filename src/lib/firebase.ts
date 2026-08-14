@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getFunctions } from "firebase/functions";
 
 // Firebase Web SDK Configuration for card-id-app
 const firebaseConfig = {
@@ -14,7 +15,8 @@ const firebaseConfig = {
 // Initialize Firebase App singleton
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Cloud Firestore Database
+// Initialize Cloud Firestore Database & Cloud Functions
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
-export { app, db };
+export { app, db, functions };

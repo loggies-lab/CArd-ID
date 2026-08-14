@@ -9,6 +9,8 @@ import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { identifyCardClientSide } from "@/lib/geminiClient";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "@/lib/firebase";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
 
@@ -101,37 +103,62 @@ export default function Home() {
         }
       }
 
-      const res = await fetch("/api/identify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: item.prefix,
-          frontBase64,
-          backBase64,
+      try {
+        const identifyCardFn = httpsCallable<{ frontBase64: string; backBase64: string; apiKeyOverride?: string }, CDPCardSchema>(functions, "identifyCard");
+        const res = await identifyCardFn({
+          frontBase64: frontBase64 || "",
+          backBase64: backBase64 || "",
           apiKeyOverride: apiKey || undefined,
-        }),
-      });
+        });
 
-      const json = await res.json();
+        const cardData = res.data;
 
-      if (!res.ok || json.error) {
         return {
           ...item,
-          status: "error",
-          errorMessage: json.error || "Vision identification failed.",
+          frontPreview: frontBase64 || item.frontPreview,
+          backPreview: backBase64 || item.backPreview,
+          status: "success",
+          data: cardData,
+          errorMessage: undefined,
         };
+      } catch (fnErr: any) {
+        console.error("Firebase Cloud Function identifyCard error, trying API fallback:", fnErr);
+        try {
+          const res = await fetch("/api/identify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: item.prefix,
+              frontBase64,
+              backBase64,
+              apiKeyOverride: apiKey || undefined,
+            }),
+          });
+
+          const json = await res.json();
+
+          if (!res.ok || json.error) {
+            throw new Error(json.error || "Vision identification failed.");
+          }
+
+          const cardData = json.card || json;
+
+          return {
+            ...item,
+            frontPreview: frontBase64 || item.frontPreview,
+            backPreview: backBase64 || item.backPreview,
+            status: "success",
+            data: cardData,
+            errorMessage: undefined,
+          };
+        } catch (fetchErr: any) {
+          return {
+            ...item,
+            status: "error",
+            errorMessage: fnErr.message || fetchErr.message || "Vision identification failed.",
+          };
+        }
       }
-
-      const cardData = json.card || json;
-
-      return {
-        ...item,
-        frontPreview: frontBase64 || item.frontPreview,
-        backPreview: backBase64 || item.backPreview,
-        status: "success",
-        data: cardData,
-        errorMessage: undefined,
-      };
     } catch (err: any) {
       return {
         ...item,
