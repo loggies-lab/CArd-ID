@@ -7,12 +7,14 @@ const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "")
 let vertexAiClientCache: GoogleGenAI | null = null;
 const apiKeyClientCache = new Map<string, GoogleGenAI>();
 
-function getGenAiClient(apiKey?: string): { ai: GoogleGenAI; modelName: string } {
-  if (apiKey) {
-    if (!apiKeyClientCache.has(apiKey)) {
-      apiKeyClientCache.set(apiKey, new GoogleGenAI({ apiKey }));
+function getGenAiClient(apiKeyOverride?: string): { ai: GoogleGenAI; modelName: string } {
+  const keyToUse = apiKeyOverride || process.env.GEMINI_API_KEY;
+
+  if (keyToUse) {
+    if (!apiKeyClientCache.has(keyToUse)) {
+      apiKeyClientCache.set(keyToUse, new GoogleGenAI({ apiKey: keyToUse }));
     }
-    return { ai: apiKeyClientCache.get(apiKey)!, modelName: "gemini-2.0-flash" };
+    return { ai: apiKeyClientCache.get(keyToUse)!, modelName: "gemini-2.0-flash" };
   }
 
   if (!vertexAiClientCache) {
