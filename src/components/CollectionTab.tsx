@@ -26,6 +26,9 @@ import {
   CheckSquare,
   Square,
   AlertCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 interface CollectionTabProps {
@@ -35,6 +38,8 @@ interface CollectionTabProps {
   onInspectCard?: (card: SavedCollectionItem) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
 }
+
+type SortField = "price" | "dateAdded" | "title" | "player" | "year";
 
 export function CollectionTab({
   savedCards,
@@ -50,6 +55,10 @@ export function CollectionTab({
   const [filterMem, setFilterMem] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Sorting State (Default: Highest Price First!)
+  const [sortBy, setSortBy] = useState<SortField>("price");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // Multi-select Checkbox State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -91,9 +100,9 @@ export function CollectionTab({
     return Array.from(set).sort();
   }, [savedCards]);
 
-  // Filtered collection list
+  // Filtered and Sorted collection list
   const filteredCards = useMemo(() => {
-    return savedCards.filter((item) => {
+    const filtered = savedCards.filter((item) => {
       const card = item.data;
       const term = searchTerm.toLowerCase();
 
@@ -113,7 +122,49 @@ export function CollectionTab({
 
       return matchesSearch && matchesSport && matchesRookie && matchesAuto && matchesMem;
     });
-  }, [savedCards, searchTerm, selectedSport, filterRookie, filterAuto, filterMem]);
+
+    // Sort by active field and direction
+    return filtered.sort((a, b) => {
+      let comparison = 0;
+
+      if (sortBy === "price") {
+        const valA = a.data.estimatedValue || 0;
+        const valB = b.data.estimatedValue || 0;
+        comparison = valA - valB;
+      } else if (sortBy === "player") {
+        comparison = (a.data.playerName || "").localeCompare(b.data.playerName || "");
+      } else if (sortBy === "title") {
+        comparison = generateCdpTitle(a.data).localeCompare(generateCdpTitle(b.data));
+      } else if (sortBy === "year") {
+        comparison = (a.data.year || 0) - (b.data.year || 0);
+      } else if (sortBy === "dateAdded") {
+        comparison = new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
+      }
+
+      return sortOrder === "asc" ? comparison : -comparison;
+    });
+  }, [savedCards, searchTerm, selectedSport, filterRookie, filterAuto, filterMem, sortBy, sortOrder]);
+
+  // Sort Handler
+  const handleHeaderSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder(field === "price" || field === "year" || field === "dateAdded" ? "desc" : "asc");
+    }
+  };
+
+  const renderSortIndicator = (field: SortField) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="h-3 w-3 inline ml-1 opacity-40 group-hover:opacity-100" />;
+    }
+    return sortOrder === "asc" ? (
+      <ArrowUp className="h-3 w-3 inline ml-1 text-cyan-400 font-bold" />
+    ) : (
+      <ArrowDown className="h-3 w-3 inline ml-1 text-cyan-400 font-bold" />
+    );
+  };
 
   // Selection Handlers
   const toggleSelectCard = (id: string) => {
@@ -409,7 +460,7 @@ export function CollectionTab({
           </div>
         </div>
 
-        {/* Filters bar */}
+        {/* Filters & Sort bar */}
         <div className="flex items-center gap-3 flex-wrap border-t border-slate-800/80 pt-3 text-xs text-slate-300">
           <div className="flex items-center gap-1.5 text-slate-400">
             <Filter className="h-3.5 w-3.5" /> Filters:
@@ -462,6 +513,29 @@ export function CollectionTab({
           >
             🏷️ Memorabilia Only
           </button>
+
+          {/* SORT BY DROPDOWN FOR GRID & TABLE VIEWS */}
+          <div className="flex items-center gap-1.5 text-slate-400 border-l border-slate-800 pl-3">
+            <ArrowUpDown className="h-3.5 w-3.5 text-cyan-400" />
+            <select
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [field, order] = e.target.value.split("-") as [SortField, "asc" | "desc"];
+                setSortBy(field);
+                setSortOrder(order);
+              }}
+              className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-cyan-300 font-mono font-bold focus:outline-none focus:border-cyan-500"
+            >
+              <option value="price-desc">Sort: Highest Price ($↓)</option>
+              <option value="price-asc">Sort: Lowest Price ($↑)</option>
+              <option value="dateAdded-desc">Sort: Newest Saved</option>
+              <option value="dateAdded-asc">Sort: Oldest Saved</option>
+              <option value="player-asc">Sort: Player (A-Z)</option>
+              <option value="year-desc">Sort: Release Year (Newest)</option>
+              <option value="year-asc">Sort: Release Year (Oldest)</option>
+              <option value="title-asc">Sort: CDP Title (A-Z)</option>
+            </select>
+          </div>
 
           {selectedIds.size > 0 && (
             <button
@@ -661,7 +735,7 @@ export function CollectionTab({
           })}
         </div>
       ) : (
-        /* TABLE VIEW WITH MULTI-SELECT CHECKBOXES */
+        /* TABLE VIEW WITH INTERACTIVE SORTABLE HEADERS */
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 overflow-hidden shadow-2xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -677,15 +751,52 @@ export function CollectionTab({
                     />
                   </th>
                   <th className="p-3">Card / Thumb</th>
-                  <th className="p-3 min-w-[220px]">CDP Title</th>
-                  <th className="p-3 font-mono font-bold text-emerald-400">Value ($)</th>
-                  <th className="p-3">Player Name</th>
-                  <th className="p-3">Year / Brand / Set</th>
+
+                  {/* Sortable CDP Title Header */}
+                  <th
+                    onClick={() => handleHeaderSort("title")}
+                    className="p-3 min-w-[220px] cursor-pointer hover:text-cyan-300 transition group select-none"
+                  >
+                    CDP Title {renderSortIndicator("title")}
+                  </th>
+
+                  {/* Sortable Value ($) Header */}
+                  <th
+                    onClick={() => handleHeaderSort("price")}
+                    className="p-3 font-mono font-bold text-emerald-400 cursor-pointer hover:text-emerald-300 transition group select-none"
+                  >
+                    Value ($) {renderSortIndicator("price")}
+                  </th>
+
+                  {/* Sortable Player Name Header */}
+                  <th
+                    onClick={() => handleHeaderSort("player")}
+                    className="p-3 cursor-pointer hover:text-cyan-300 transition group select-none"
+                  >
+                    Player Name {renderSortIndicator("player")}
+                  </th>
+
+                  {/* Sortable Year Header */}
+                  <th
+                    onClick={() => handleHeaderSort("year")}
+                    className="p-3 cursor-pointer hover:text-cyan-300 transition group select-none"
+                  >
+                    Year / Brand / Set {renderSortIndicator("year")}
+                  </th>
+
                   <th className="p-3">Card #</th>
                   <th className="p-3">Team / Sport</th>
                   <th className="p-3">Parallel / Subset</th>
                   <th className="p-3">Flags</th>
-                  <th className="p-3">Date Saved</th>
+
+                  {/* Sortable Date Saved Header */}
+                  <th
+                    onClick={() => handleHeaderSort("dateAdded")}
+                    className="p-3 cursor-pointer hover:text-cyan-300 transition group select-none"
+                  >
+                    Date Saved {renderSortIndicator("dateAdded")}
+                  </th>
+
                   <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
