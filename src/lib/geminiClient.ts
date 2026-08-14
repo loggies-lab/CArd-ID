@@ -1,5 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
+const DEFAULT_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyBCleNRqRE2YP4aVgNUVNU4WLiygjmrrPI";
+
 const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
 
 function parseCleanJson(rawText: string) {
@@ -18,18 +20,20 @@ function parseCleanJson(rawText: string) {
 
 /**
  * Executes Gemini 2.0 Flash Vision AI card identification directly in the client browser.
- * This completely eliminates server network errors ("Failed to fetch") when deployed online.
+ * Uses built-in Google Cloud API key if no custom key is specified.
  */
 export async function identifyCardClientSide(
   frontBase64: string,
   backBase64: string,
-  apiKey: string
+  apiKey?: string
 ) {
-  if (!apiKey) {
-    throw new Error("Gemini API Key is required for client-side vision processing.");
+  const keyToUse = apiKey || DEFAULT_GEMINI_API_KEY;
+
+  if (!keyToUse) {
+    throw new Error("Gemini API Key is required for vision processing.");
   }
 
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: keyToUse });
 
   const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
