@@ -66,6 +66,7 @@ export function CardDetailsModal({
   const [isFetchingComps, setIsFetchingComps] = useState(false);
   const [compsError, setCompsError] = useState<string | null>(null);
   const [customCompsQuery, setCustomCompsQuery] = useState("");
+  const [appliedValueSuccess, setAppliedValueSuccess] = useState(false);
 
   // Editable form state initialized from card data
   const [formData, setFormData] = useState<CDPCardSchema>({
@@ -86,6 +87,8 @@ export function CardDetailsModal({
     gradingCompany: "None",
     grade: "",
     location: "",
+    estimatedValue: undefined,
+    valueLastUpdated: undefined,
   });
 
   useEffect(() => {
@@ -108,9 +111,12 @@ export function CardDetailsModal({
         gradingCompany: card.data.gradingCompany || "None",
         grade: card.data.grade || "",
         location: card.data.location || "",
+        estimatedValue: card.data.estimatedValue,
+        valueLastUpdated: card.data.valueLastUpdated,
       });
       setActiveSide("front");
       setCopiedTitle(false);
+      setAppliedValueSuccess(false);
 
       const generatedQuery = generateCdpTitle(card.data);
       setCustomCompsQuery(generatedQuery);
@@ -141,6 +147,13 @@ export function CardDetailsModal({
     navigator.clipboard.writeText(cdpTitle);
     setCopiedTitle(true);
     setTimeout(() => setCopiedTitle(false), 2500);
+  };
+
+  const handleApplyEstValue = (val: number) => {
+    handleChange("estimatedValue", val);
+    handleChange("valueLastUpdated", new Date().toISOString());
+    setAppliedValueSuccess(true);
+    setTimeout(() => setAppliedValueSuccess(false), 2500);
   };
 
   const handleFetchComps = async () => {
@@ -604,6 +617,27 @@ export function CardDetailsModal({
                   className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-lg p-2 text-slate-100 font-mono focus:outline-none"
                 />
               </div>
+
+              {/* Applied Card Value ($) */}
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <DollarSign className="h-3.5 w-3.5 text-emerald-400" /> Applied Card Value ($)
+                  </span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.estimatedValue !== undefined ? formData.estimatedValue : ""}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value);
+                    handleChange("estimatedValue", isNaN(val) ? undefined : val);
+                    handleChange("valueLastUpdated", new Date().toISOString());
+                  }}
+                  placeholder="e.g. 1.47"
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-lg p-2 text-emerald-300 font-mono font-bold focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
@@ -655,14 +689,25 @@ export function CardDetailsModal({
                 {/* Stats Header Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {/* Estimated Fair Market Value */}
-                  <div className="bg-gradient-to-br from-cyan-950/80 to-slate-900 p-3 rounded-xl border border-cyan-500/30">
-                    <span className="text-[10px] text-cyan-300 font-mono font-bold uppercase block tracking-wider">
-                      Est. Fair Value
-                    </span>
-                    <span className="text-xl font-black text-emerald-400 font-mono">
-                      ${compsResult.estimatedMarketValue.toFixed(2)}
-                    </span>
-                    <span className="text-[9px] text-slate-400 block font-mono">Outlier-Cleaned Avg</span>
+                  <div className="bg-gradient-to-br from-cyan-950/80 to-slate-900 p-3 rounded-xl border border-cyan-500/30 flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-[10px] text-cyan-300 font-mono font-bold uppercase block tracking-wider">
+                        Est. Fair Value
+                      </span>
+                      <span className="text-xl font-black text-emerald-400 font-mono">
+                        ${compsResult.estimatedMarketValue.toFixed(2)}
+                      </span>
+                      <span className="text-[9px] text-slate-400 block font-mono">Outlier-Cleaned Avg</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleApplyEstValue(compsResult.estimatedMarketValue)}
+                      className="w-full py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-mono font-bold transition flex items-center justify-center gap-1 shadow active:scale-95"
+                    >
+                      {appliedValueSuccess ? <Check className="h-3 w-3" /> : <DollarSign className="h-3 w-3" />}
+                      {appliedValueSuccess ? "✓ Value Applied!" : `Apply $${compsResult.estimatedMarketValue.toFixed(2)} to Card`}
+                    </button>
                   </div>
 
                   {/* Median Price */}

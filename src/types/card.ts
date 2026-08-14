@@ -16,6 +16,8 @@ export interface CDPCardSchema {
   gradingCompany?: "None" | "PSA" | "BGS" | "SGC" | "CGC" | string;
   grade?: string;
   location?: string;
+  estimatedValue?: number;
+  valueLastUpdated?: string;
 }
 
 export interface CardItem {

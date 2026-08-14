@@ -20,6 +20,7 @@ import {
   Star,
   CheckCircle,
   Filter,
+  DollarSign,
 } from "lucide-react";
 
 interface CollectionTabProps {
@@ -43,14 +44,17 @@ export function CollectionTab({
   const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  // Statistics calculation
+  // Statistics calculation including Total Portfolio Worth
   const stats = useMemo(() => {
     const total = savedCards.length;
     const rookies = savedCards.filter((c) => c.data.isRookie).length;
     const autos = savedCards.filter((c) => c.data.isAutographed).length;
     const mems = savedCards.filter((c) => c.data.isMemorabilia).length;
-    const sportsCount = new Set(savedCards.map((c) => c.data.sport).filter(Boolean)).size;
-    return { total, rookies, autos, mems, sportsCount };
+    
+    const valuedCards = savedCards.filter((c) => c.data.estimatedValue !== undefined && c.data.estimatedValue > 0);
+    const portfolioValue = valuedCards.reduce((sum, c) => sum + (c.data.estimatedValue || 0), 0);
+
+    return { total, rookies, autos, mems, portfolioValue, valuedCount: valuedCards.length };
   }, [savedCards]);
 
   // Unique sports list for filter dropdown
@@ -93,7 +97,19 @@ export function CollectionTab({
   return (
     <div className="space-y-6">
       {/* Analytics Counter Header */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        {/* Total Portfolio Value Card */}
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 backdrop-blur-xl flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow">
+            <DollarSign className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider font-mono">Portfolio Worth</p>
+            <p className="text-xl font-black text-white font-mono">${stats.portfolioValue.toFixed(2)}</p>
+            <p className="text-[10px] text-emerald-400/80 font-mono">{stats.valuedCount} / {stats.total} Priced</p>
+          </div>
+        </div>
+
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 backdrop-blur-xl flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
             <Layers className="h-5 w-5" />
@@ -344,6 +360,11 @@ export function CollectionTab({
                     <span className="rounded-md bg-slate-950/90 border border-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
                       #{card.cardNumber || item.prefix}
                     </span>
+                    {card.estimatedValue !== undefined && card.estimatedValue > 0 && (
+                      <span className="rounded-md bg-emerald-500/90 border border-emerald-500/50 px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300 shadow">
+                        ${card.estimatedValue.toFixed(2)}
+                      </span>
+                    )}
                   </div>
 
                   <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
@@ -434,6 +455,7 @@ export function CollectionTab({
                 <tr>
                   <th className="p-3">Card / Thumb</th>
                   <th className="p-3 min-w-[220px]">CDP Title</th>
+                  <th className="p-3 font-mono font-bold text-emerald-400">Value ($)</th>
                   <th className="p-3">Player Name</th>
                   <th className="p-3">Year / Brand / Set</th>
                   <th className="p-3">Card #</th>
@@ -475,6 +497,11 @@ export function CollectionTab({
                       </td>
                       <td className="p-3 font-mono font-bold text-cyan-300 max-w-[240px] truncate" title={generateCdpTitle(card)}>
                         {generateCdpTitle(card) || "-"}
+                      </td>
+                      <td className="p-3 font-mono font-black text-emerald-400">
+                        {card.estimatedValue !== undefined && card.estimatedValue > 0
+                          ? `$${card.estimatedValue.toFixed(2)}`
+                          : "-"}
                       </td>
                       <td className="p-3 font-bold text-white">{card.playerName}</td>
                       <td className="p-3">

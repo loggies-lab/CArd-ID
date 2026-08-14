@@ -125,6 +125,7 @@ export function CardTable({
               <th className="p-3 w-16 text-center">Preview</th>
               <th className="p-3 w-28">Prefix ID</th>
               <th className="p-3 min-w-[220px]">CDP Title</th>
+              <th className="p-3 w-28">Est. Value</th>
               <th className="p-3 min-w-[140px]">Player Name</th>
               <th className="p-3 min-w-[120px]">Brand</th>
               <th className="p-3 min-w-[160px]">Set Name</th>
@@ -195,6 +196,11 @@ export function CardTable({
                   {/* CDP Title */}
                   <td className="p-2 font-mono font-bold text-cyan-300 text-[11px] max-w-[240px] truncate" title={generateCdpTitle(d)}>
                     {generateCdpTitle(d) || "-"}
+                  </td>
+
+                  {/* Est. Value */}
+                  <td className="p-2 font-mono font-bold text-emerald-400 text-[11px]">
+                    {d.estimatedValue !== undefined && d.estimatedValue > 0 ? `$${d.estimatedValue.toFixed(2)}` : "-"}
                   </td>
 
                   {/* Player Name */}
