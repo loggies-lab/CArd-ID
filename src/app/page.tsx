@@ -7,7 +7,7 @@ import { CardTable } from "@/components/CardTable";
 import { CollectionTab } from "@/components/CollectionTab";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
-import { fileToOptimizedBase64 } from "@/lib/imageOptimizer";
+import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
 
@@ -45,17 +45,17 @@ export default function Home() {
       let frontBase64: string | null = null;
       let backBase64: string | null = null;
 
-      // Optimize and resize images on client before base64 transfer
+      // Optimize and resize images on client before base64 transfer (~150KB per image)
       if (item.frontFile) {
-        frontBase64 = await fileToOptimizedBase64(item.frontFile, 1024, 0.85);
+        frontBase64 = await fileToOptimizedBase64(item.frontFile, 800, 0.75);
       } else if (item.frontPreview) {
-        frontBase64 = item.frontPreview;
+        frontBase64 = await compressBase64DataUrl(item.frontPreview, 800, 0.75);
       }
 
       if (item.backFile) {
-        backBase64 = await fileToOptimizedBase64(item.backFile, 1024, 0.85);
+        backBase64 = await fileToOptimizedBase64(item.backFile, 800, 0.75);
       } else if (item.backPreview) {
-        backBase64 = item.backPreview;
+        backBase64 = await compressBase64DataUrl(item.backPreview, 800, 0.75);
       }
 
       const res = await fetch("/api/identify", {
@@ -65,8 +65,6 @@ export default function Home() {
           id: item.prefix,
           frontBase64,
           backBase64,
-          frontImage: frontBase64,
-          backImage: backBase64,
           apiKeyOverride: apiKey || undefined,
         }),
       });
