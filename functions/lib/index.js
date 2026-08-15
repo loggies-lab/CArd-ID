@@ -20,10 +20,9 @@ function getPercentile(arr, q) {
     return sorted[base];
 }
 exports.identifyCard = (0, https_1.onCall)({ cors: true, secrets: [geminiApiKey] }, async (request) => {
-    const rawData = request.data?.data || request.data || {};
-    const frontBase64 = rawData.frontBase64;
-    const backBase64 = rawData.backBase64;
-    const apiKeyOverride = rawData.apiKeyOverride;
+    const frontBase64 = request.data?.frontBase64;
+    const backBase64 = request.data?.backBase64;
+    const apiKeyOverride = request.data?.apiKeyOverride;
     const apiKey = apiKeyOverride ||
         geminiApiKey.value() ||
         process.env.GEMINI_API_KEY;

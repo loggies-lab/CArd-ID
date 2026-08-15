@@ -134,10 +134,7 @@ export default function Home() {
         }
       }
 
-      const reqBody = {
-        frontBase64,
-        backBase64,
-        apiKeyOverride: apiKey || undefined,
+      const callableBody = {
         data: {
           frontBase64,
           backBase64,
@@ -145,17 +142,23 @@ export default function Home() {
         },
       };
 
+      const restBody = {
+        frontBase64,
+        backBase64,
+        apiKeyOverride: apiKey || undefined,
+      };
+
       let res = await fetch("/identifyCard", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reqBody),
+        body: JSON.stringify(callableBody),
       });
 
       if (!res.ok) {
         res = await fetch("/api/identify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(reqBody),
+          body: JSON.stringify(restBody),
         });
       }
 
