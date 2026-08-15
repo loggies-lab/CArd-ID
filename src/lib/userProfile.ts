@@ -51,44 +51,55 @@ async function withFirestoreRetry<T>(fn: () => Promise<T>, maxRetries = 3, delay
  * Provisions or updates user profile document at /users/{uid}
  */
 export async function getOrCreateUserProfile(user: User): Promise<UserProfileDocument> {
-  return withFirestoreRetry(async () => {
-    const userRef = doc(db, "users", user.uid);
-    const snap = await getDoc(userRef);
+  const defaultProfile: UserProfileDocument = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || null,
+    photoURL: user.photoURL || null,
+    createdAt: new Date().toISOString(),
+    subscriptionTier: "free",
+    scansRemaining: 50,
+    monthlyScanLimit: 50,
+    lastLogin: new Date().toISOString(),
+  };
 
-    const nowIso = new Date().toISOString();
+  try {
+    return await withFirestoreRetry(async () => {
+      const userRef = doc(db, "users", user.uid);
+      const snap = await getDoc(userRef);
 
-    if (!snap.exists()) {
-      const newProfile: UserProfileDocument = {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || null,
-        photoURL: user.photoURL || null,
-        createdAt: nowIso,
-        subscriptionTier: "free",
-        scansRemaining: 50,
-        monthlyScanLimit: 50,
-        lastLogin: nowIso,
-      };
-      await setDoc(userRef, newProfile);
-      return newProfile;
-    } else {
-      const existing = snap.data() as UserProfileDocument;
-      const updated = {
-        ...existing,
-        email: user.email || existing.email,
-        displayName: user.displayName || existing.displayName,
-        photoURL: user.photoURL || existing.photoURL,
-        lastLogin: nowIso,
-      };
-      await updateDoc(userRef, {
-        email: updated.email,
-        displayName: updated.displayName,
-        photoURL: updated.photoURL,
-        lastLogin: nowIso,
-      });
-      return updated;
-    }
-  });
+      const nowIso = new Date().toISOString();
+
+      if (!snap.exists()) {
+        const newProfile: UserProfileDocument = {
+          ...defaultProfile,
+          createdAt: nowIso,
+          lastLogin: nowIso,
+        };
+        await setDoc(userRef, newProfile);
+        return newProfile;
+      } else {
+        const existing = snap.data() as UserProfileDocument;
+        const updated = {
+          ...existing,
+          email: user.email || existing.email,
+          displayName: user.displayName || existing.displayName,
+          photoURL: user.photoURL || existing.photoURL,
+          lastLogin: nowIso,
+        };
+        await updateDoc(userRef, {
+          email: updated.email,
+          displayName: updated.displayName,
+          photoURL: updated.photoURL,
+          lastLogin: nowIso,
+        });
+        return updated;
+      }
+    });
+  } catch (err) {
+    console.warn("Firestore profile sync notice, using local profile fallback:", err);
+    return defaultProfile;
+  }
 }
 
 /**

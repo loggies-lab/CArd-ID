@@ -115,21 +115,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    try {
-      const res = await signInWithPopup(auth, provider);
-      if (res?.user) {
-        setCurrentUser(res.user);
-        setLoading(false);
-      }
-    } catch (err: any) {
-      console.warn("Popup error/COOP block notice, initiating Google redirect auth:", err?.code, err?.message);
-      // Fallback seamlessly to redirect auth if popup is blocked by COOP or browser security rules
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (redirectErr: any) {
-        console.error("Google redirect auth error:", redirectErr);
-        throw redirectErr;
-      }
+    const res = await signInWithPopup(auth, provider);
+    if (res?.user) {
+      setCurrentUser(res.user);
+      setLoading(false);
     }
   };
 
