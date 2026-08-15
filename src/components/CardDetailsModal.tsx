@@ -683,6 +683,18 @@ export function CardDetailsModal({
                   <RefreshCw className={`h-3.5 w-3.5 ${isFetchingComps ? "animate-spin" : ""}`} />
                   {isFetchingComps ? "Fetching..." : "Fetch Comps"}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleFetchComps();
+                  }}
+                  disabled={isFetchingComps || !customCompsQuery.trim()}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-50 text-xs font-bold text-white shadow-md transition active:scale-95 shrink-0"
+                >
+                  <Award className="h-3.5 w-3.5 text-white" />
+                  Grade ROI Audit
+                </button>
               </div>
             </div>
 

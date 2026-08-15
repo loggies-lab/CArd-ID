@@ -1,34 +1,60 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { HeaderBar } from "@/components/HeaderBar";
 import { FileDropzone } from "@/components/FileDropzone";
 import { CardTable } from "@/components/CardTable";
 import { CollectionTab } from "@/components/CollectionTab";
+import { GradingCandidatesTab } from "@/components/GradingCandidatesTab";
+import { GradingSettingsModal } from "@/components/GradingSettingsModal";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { identifyCardClientSide } from "@/lib/geminiClient";
-import { httpsCallable } from "firebase/functions";
-import { functions } from "@/lib/firebase";
-import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
-import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap } from "lucide-react";
+import { CardItem, SavedCollectionItem, CDPCardSchema, UserGradingSettings } from "@/types/card";
+import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award } from "lucide-react";
+
+const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
+  minRawThreshold: 30.0,
+  targetCompany: "PSA",
+  estimatedGradingFee: 19.0,
+  autoFlagCandidates: true,
+};
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"scanner" | "collection">("scanner");
+  const [activeTab, setActiveTab] = useState<"scanner" | "collection" | "grading">("scanner");
   const [items, setItems] = useState<CardItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [apiKey, setApiKeyState] = useState("");
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [inspectingCard, setInspectingCard] = useState<CardItem | SavedCollectionItem | null>(null);
 
-  // Load saved API Key from localStorage on mount
-  React.useEffect(() => {
+  const [gradingSettings, setGradingSettings] = useState<UserGradingSettings>(DEFAULT_GRADING_SETTINGS);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Load saved API Key & Grading Settings from localStorage on mount
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const storedKey = localStorage.getItem("CARD_ID_GEMINI_API_KEY");
       if (storedKey) setApiKeyState(storedKey);
+
+      const storedGrading = localStorage.getItem("CARD_ID_GRADING_SETTINGS");
+      if (storedGrading) {
+        try {
+          setGradingSettings(JSON.parse(storedGrading));
+        } catch (e) {
+          console.warn("Failed to parse stored grading settings");
+        }
+      }
     }
   }, []);
+
+  const saveGradingSettings = (newSettings: UserGradingSettings) => {
+    setGradingSettings(newSettings);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("CARD_ID_GRADING_SETTINGS", JSON.stringify(newSettings));
+    }
+  };
 
   const setApiKey = (key: string) => {
     setApiKeyState(key);
@@ -52,13 +78,18 @@ export default function Home() {
     isSaved,
   } = useCollection();
 
+  // Compute grading candidate count matching min raw threshold
+  const candidateCount = useMemo(() => {
+    const thresh = gradingSettings.minRawThreshold;
+    const scannerCandidates = items.filter((i) => (i.data?.estimatedValue || 0) >= thresh).length;
+    const savedCandidates = savedCards.filter((s) => (s.data?.estimatedValue || 0) >= thresh).length;
+    return scannerCandidates + savedCandidates;
+  }, [items, savedCards, gradingSettings.minRawThreshold]);
+
   const handleSaveCardDetails = (cardId: string, updatedData: CDPCardSchema) => {
-    // Update scanner items state if item is in batch scanner
     setItems((prev) =>
       prev.map((item) => (item.id === cardId ? { ...item, data: updatedData } : item))
     );
-
-    // Update persistent localStorage collection if item is saved
     updateSavedCardData(cardId, updatedData);
   };
 
@@ -67,7 +98,6 @@ export default function Home() {
       let frontBase64: string | null = null;
       let backBase64: string | null = null;
 
-      // Optimize and resize images on client before base64 transfer (~150KB per image)
       if (item.frontFile) {
         frontBase64 = await fileToOptimizedBase64(item.frontFile, 800, 0.75);
       } else if (item.frontPreview) {
@@ -80,8 +110,6 @@ export default function Home() {
         backBase64 = await compressBase64DataUrl(item.backPreview, 800, 0.75);
       }
 
-      // Direct Client-Side Vision AI (Dual Redundancy): If user provided API Key in Key Options,
-      // run Gemini 2.0 Flash directly from browser to guarantee 100% success with zero server network errors!
       if (apiKey && frontBase64 && backBase64) {
         try {
           const cardData = await identifyCardClientSide(frontBase64, backBase64, apiKey);
@@ -95,80 +123,44 @@ export default function Home() {
           };
         } catch (clientErr: any) {
           console.error("Client-side Gemini Vision processing error:", clientErr);
-          return {
-            ...item,
-            status: "error",
-            errorMessage: clientErr.message || "Gemini Vision AI processing failed.",
-          };
         }
       }
 
-      try {
-        const identifyCardFn = httpsCallable<{ frontBase64: string; backBase64: string; apiKeyOverride?: string }, CDPCardSchema>(functions, "identifyCard");
-        const res = await identifyCardFn({
-          frontBase64: frontBase64 || "",
-          backBase64: backBase64 || "",
+      const res = await fetch("/identifyCard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          frontBase64,
+          backBase64,
           apiKeyOverride: apiKey || undefined,
-        });
+        }),
+      });
 
-        const cardData = res.data;
-
-        return {
-          ...item,
-          frontPreview: frontBase64 || item.frontPreview,
-          backPreview: backBase64 || item.backPreview,
-          status: "success",
-          data: cardData,
-          errorMessage: undefined,
-        };
-      } catch (fnErr: any) {
-        console.error("Firebase Cloud Function identifyCard error, trying API fallback:", fnErr);
-        try {
-          const res = await fetch("/api/identify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: item.prefix,
-              frontBase64,
-              backBase64,
-              apiKeyOverride: apiKey || undefined,
-            }),
-          });
-
-          const json = await res.json();
-
-          if (!res.ok || json.error) {
-            throw new Error(json.error || "Vision identification failed.");
-          }
-
-          const rawCardData = (json.result || json.card || json) as any;
-          const player = rawCardData.playerName || rawCardData.subject || rawCardData.player || "";
-          const brand = rawCardData.brand || rawCardData.publisher || "";
-
-          const cardData = {
-            ...rawCardData,
-            playerName: player,
-            subject: player,
-            brand: brand,
-            publisher: brand,
-          };
-
-          return {
-            ...item,
-            frontPreview: frontBase64 || item.frontPreview,
-            backPreview: backBase64 || item.backPreview,
-            status: "success",
-            data: cardData,
-            errorMessage: undefined,
-          };
-        } catch (fetchErr: any) {
-          return {
-            ...item,
-            status: "error",
-            errorMessage: fnErr.message || fetchErr.message || "Vision identification failed.",
-          };
-        }
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        throw new Error(json.error || "Vision identification failed.");
       }
+
+      const rawCardData = (json.result || json.card || json) as any;
+      const player = rawCardData.playerName || rawCardData.subject || rawCardData.player || "";
+      const brand = rawCardData.brand || rawCardData.publisher || "";
+
+      const cardData = {
+        ...rawCardData,
+        playerName: player,
+        subject: player,
+        brand: brand,
+        publisher: brand,
+      };
+
+      return {
+        ...item,
+        frontPreview: frontBase64 || item.frontPreview,
+        backPreview: backBase64 || item.backPreview,
+        status: "success",
+        data: cardData,
+        errorMessage: undefined,
+      };
     } catch (err: any) {
       return {
         ...item,
@@ -192,12 +184,10 @@ export default function Home() {
       return;
     }
 
-    // Mark pending items as processing
     setItems((prev) =>
       prev.map((i) => (pendingItems.some((p) => p.id === i.id) ? { ...i, status: "processing" } : i))
     );
 
-    // Parallel Concurrency Pool (4 simultaneous requests)
     const CONCURRENCY_LIMIT = 4;
     let pendingQueueIndex = 0;
 
@@ -208,7 +198,6 @@ export default function Home() {
         if (!current) break;
 
         const result = await processSingleCard(current);
-
         setItems((prev) =>
           prev.map((item) => (item.id === current.id ? result : item))
         );
@@ -235,7 +224,6 @@ export default function Home() {
     );
 
     const updated = await processSingleCard(target);
-
     setItems((prev) =>
       prev.map((i) => (i.id === cardId ? updated : i))
     );
@@ -249,6 +237,8 @@ export default function Home() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         savedCount={savedCards.length}
+        candidateCount={candidateCount}
+        onOpenGradingSettings={() => setIsSettingsOpen(true)}
       />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
@@ -260,19 +250,23 @@ export default function Home() {
               <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-mono font-bold text-cyan-300">
                 <Sparkles className="h-3.5 w-3.5" /> Card Dealer Pro (CDP) Standard Engine
               </span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-300">
-                <Zap className="h-3.5 w-3.5 text-emerald-400" /> High-Speed 4x Parallel Engine
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300">
+                <Award className="h-3.5 w-3.5 text-amber-400" /> {gradingSettings.targetCompany} Grading ROI Rules Engine
               </span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
               {activeTab === "scanner"
                 ? "AI Sports Card Identification & Cataloging"
-                : "My Saved Online Trading Card Collection"}
+                : activeTab === "collection"
+                ? "My Saved Online Trading Card Collection"
+                : "Grading ROI Candidates & PSA Market Comps"}
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
               {activeTab === "scanner"
                 ? "Batch upload trading card front and back scans. Our vision pipeline extracts player names, manufacturer brands, set releases, card numbers, parallel finishes, and rookie/auto flags with 100% CDP schema compliance."
-                : "View, filter, search, and manage your persistent online collection of identified trading cards. Export your portfolio to CDP CSV at any time."}
+                : activeTab === "collection"
+                ? "View, filter, search, and manage your persistent online collection of identified trading cards. Export your portfolio to CDP CSV at any time."
+                : `Inspect high-value trading cards worth sending for ${gradingSettings.targetCompany} grading based on estimated raw market values (\ge \$${gradingSettings.minRawThreshold.toFixed(2)}) and graded market sales comps.`}
             </p>
           </div>
         </div>
@@ -291,9 +285,8 @@ export default function Home() {
         )}
 
         {/* TAB 1: BATCH SCANNER */}
-        {activeTab === "scanner" ? (
+        {activeTab === "scanner" && (
           <>
-            {/* Batch File Dropzone & Pairing Logic */}
             <section className="space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
                 <Layers className="h-5 w-5 text-cyan-400" />
@@ -307,7 +300,6 @@ export default function Home() {
               />
             </section>
 
-            {/* Results Inventory & CDP CSV Export */}
             {items.length > 0 && (
               <section className="space-y-4 pt-4">
                 <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
@@ -326,8 +318,10 @@ export default function Home() {
               </section>
             )}
           </>
-        ) : (
-          /* TAB 2: MY ONLINE COLLECTION */
+        )}
+
+        {/* TAB 2: MY ONLINE COLLECTION */}
+        {activeTab === "collection" && (
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
               <BookmarkCheck className="h-5 w-5 text-cyan-400" />
@@ -343,12 +337,32 @@ export default function Home() {
           </section>
         )}
 
-        {/* Card Inspector Modal */}
+        {/* TAB 3: GRADING CANDIDATES */}
+        {activeTab === "grading" && (
+          <section className="space-y-4">
+            <GradingCandidatesTab
+              scannerItems={items}
+              savedCards={savedCards}
+              settings={gradingSettings}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+              onInspectCard={(card) => setInspectingCard(card)}
+            />
+          </section>
+        )}
+
+        {/* Modals */}
         <CardDetailsModal
           card={inspectingCard}
           isOpen={!!inspectingCard}
           onClose={() => setInspectingCard(null)}
           onSave={handleSaveCardDetails}
+        />
+
+        <GradingSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          settings={gradingSettings}
+          onSaveSettings={saveGradingSettings}
         />
       </main>
     </div>

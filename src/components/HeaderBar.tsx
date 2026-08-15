@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, X } from "lucide-react";
+import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Sliders, X } from "lucide-react";
 
 interface HeaderBarProps {
   apiKey: string;
   setApiKey: (key: string) => void;
-  activeTab: "scanner" | "collection";
-  setActiveTab: (tab: "scanner" | "collection") => void;
+  activeTab: "scanner" | "collection" | "grading";
+  setActiveTab: (tab: "scanner" | "collection" | "grading") => void;
   savedCount: number;
+  candidateCount?: number;
+  onOpenGradingSettings?: () => void;
 }
 
 export function HeaderBar({
@@ -18,6 +20,8 @@ export function HeaderBar({
   activeTab,
   setActiveTab,
   savedCount,
+  candidateCount = 0,
+  onOpenGradingSettings,
 }: HeaderBarProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
@@ -55,7 +59,7 @@ export function HeaderBar({
           <div className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 p-3.5 flex items-start gap-2.5">
             <CheckCircle className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
             <span>
-              <strong>Primary Mode:</strong> Vertex AI using Google Cloud ADC credentials.
+              <strong>Primary Mode:</strong> Gemini 2.0 Flash / Vertex AI using Cloud secret key.
             </span>
           </div>
 
@@ -67,11 +71,11 @@ export function HeaderBar({
               type="text"
               value={tempKey}
               onChange={(e) => setTempKey(e.target.value)}
-              placeholder="Paste your Gemini API Key (e.g. AIzaSy...)"
+              placeholder="Paste your Gemini API Key (e.g. AQ...)"
               className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-3 text-xs font-mono text-cyan-300 focus:outline-none shadow-inner"
             />
             <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
-              If set, requests will prioritize this API key for Gemini 2.0 Flash. Get a free API key at{" "}
+              If set, requests will prioritize this API key for Gemini Vision AI. Get a free API key at{" "}
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
@@ -105,7 +109,7 @@ export function HeaderBar({
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 flex-wrap gap-3">
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 shadow-lg shadow-cyan-500/20">
@@ -121,13 +125,13 @@ export function HeaderBar({
               </span>
             </div>
             <p className="text-[11px] text-slate-400 hidden sm:block">
-              Powered by <code className="font-mono text-cyan-300">gemini-1.5-flash</code> Vision Pipeline
+              Powered by <code className="font-mono text-cyan-300">gemini-2.0-flash</code> Vision Pipeline
             </p>
           </div>
         </div>
 
         {/* Central Nav Tabs */}
-        <div className="flex items-center rounded-xl border border-slate-800 bg-slate-900/90 p-1 shadow-inner">
+        <div className="flex items-center rounded-xl border border-slate-800 bg-slate-900/90 p-1 shadow-inner flex-wrap">
           <button
             onClick={() => setActiveTab("scanner")}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
@@ -151,23 +155,53 @@ export function HeaderBar({
             <BookmarkCheck className="h-3.5 w-3.5" />
             <span>My Collection</span>
             {savedCount > 0 && (
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${
-                activeTab === "collection"
-                  ? "bg-white/20 text-white"
-                  : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
-              }`}>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${
+                  activeTab === "collection"
+                    ? "bg-white/20 text-white"
+                    : "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                }`}
+              >
                 {savedCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("grading")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+              activeTab === "grading"
+                ? "bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md shadow-amber-500/20"
+                : "text-amber-400 hover:text-amber-200 hover:bg-slate-800/50"
+            }`}
+          >
+            <Award className="h-3.5 w-3.5" />
+            <span>Grading ROI 🔥</span>
+            {candidateCount > 0 && (
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${
+                  activeTab === "grading"
+                    ? "bg-white/20 text-white"
+                    : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                }`}
+              >
+                {candidateCount}
               </span>
             )}
           </button>
         </div>
 
-        {/* Status Pills & Credentials Settings */}
-        <div className="flex items-center gap-3">
-          <div className="hidden lg:flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1 text-xs text-slate-300">
-            <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Auth: <strong className="text-slate-100 font-mono">{apiKey ? "API Key" : "Google Cloud ADC"}</strong></span>
-          </div>
+        {/* Status Pills & Settings */}
+        <div className="flex items-center gap-2.5">
+          {onOpenGradingSettings && (
+            <button
+              onClick={onOpenGradingSettings}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
+              title="Grading ROI & Threshold Rules"
+            >
+              <Sliders className="h-3.5 w-3.5 text-amber-400" /> Rules
+            </button>
+          )}
 
           <button
             onClick={() => setShowConfig(true)}
@@ -178,7 +212,6 @@ export function HeaderBar({
         </div>
       </div>
 
-      {/* Render Key Options Modal centered over screen via Portal */}
       {showConfig && mounted && createPortal(modalContent, document.body)}
     </header>
   );

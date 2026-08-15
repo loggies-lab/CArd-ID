@@ -1,3 +1,22 @@
+export interface GradingAnalysis {
+  psa10Value?: number;
+  psa9Value?: number;
+  gradingFee?: number;
+  netProfitPSA10?: number;
+  netProfitPSA9?: number;
+  roiPSA10?: number;
+  isRecommended?: boolean;
+  recommendationReason?: string;
+  lastEvaluated?: string;
+}
+
+export interface UserGradingSettings {
+  minRawThreshold: number;
+  targetCompany: "PSA" | "BGS" | "SGC" | "CGC";
+  estimatedGradingFee: number;
+  autoFlagCandidates: boolean;
+}
+
 export interface CDPCardSchema {
   playerName: string;
   brand: string;
@@ -18,6 +37,7 @@ export interface CDPCardSchema {
   location?: string;
   estimatedValue?: number;
   valueLastUpdated?: string;
+  gradingAnalysis?: GradingAnalysis;
 }
 
 export interface CardItem {
