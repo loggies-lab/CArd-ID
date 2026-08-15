@@ -108,16 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (err: any) {
-      console.warn("Popup authentication error/notice:", err?.code, err?.message);
-      if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
-        await signInWithRedirect(auth, provider);
-      } else {
-        throw err;
-      }
-    }
+    await signInWithRedirect(auth, provider);
   };
 
   const sendPasswordReset = async (email: string) => {

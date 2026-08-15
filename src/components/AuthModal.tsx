@@ -82,18 +82,14 @@ export function AuthModal({ isOpen, onClose, initialTab = "signin" }: AuthModalP
     setIsSubmitting(true);
     try {
       await signInWithGoogle();
-      onClose();
     } catch (err: any) {
       let msg = err.message || "Google sign-in failed.";
       if (err.code === "auth/operation-not-allowed") {
         msg = "Google Sign-In is not enabled in Firebase Console. Go to Firebase Console > Authentication > Sign-in method > Google and click 'Enable'.";
       } else if (err.code === "auth/unauthorized-domain") {
         msg = "This domain is not in Authorized Domains. Add localhost or your domain in Firebase Console > Authentication > Settings.";
-      } else if (err.code === "auth/popup-closed-by-user") {
-        msg = "Sign-in popup was closed before completing.";
       }
       setErrorMsg(msg);
-    } finally {
       setIsSubmitting(false);
     }
   };
