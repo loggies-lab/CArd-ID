@@ -54,28 +54,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setLoading(true);
       if (user) {
         setCurrentUser(user);
-        try {
-          const token = await user.getIdToken();
-          if (!isCancelled) setIdToken(token);
+        setLoading(false);
 
-          setTimeout(async () => {
-            if (isCancelled) return;
-            try {
-              const profile = await getOrCreateUserProfile(user);
-              if (!isCancelled) setUserProfile(profile);
-            } catch (err) {
-              console.warn("User profile fetch delayed retry:", err);
-            } finally {
-              if (!isCancelled) setLoading(false);
-            }
-          }, 250);
-        } catch (err) {
-          console.error("Failed to load user token:", err);
-          if (!isCancelled) setLoading(false);
-        }
+        user
+          .getIdToken()
+          .then((token) => {
+            if (!isCancelled) setIdToken(token);
+          })
+          .catch((err) => console.error("Failed to load user token:", err));
+
+        getOrCreateUserProfile(user)
+          .then((profile) => {
+            if (!isCancelled) setUserProfile(profile);
+          })
+          .catch((err) => {
+            console.warn("User profile background sync notice:", err);
+          });
       } else {
         setCurrentUser(null);
         setUserProfile(null);
@@ -108,7 +104,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    await signInWithRedirect(auth, provider);
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      console.warn("Popup authentication notice, attempting redirect fallback:", err?.code, err?.message);
+      if (
+        err.code === "auth/popup-blocked" ||
+        err.code === "auth/cancelled-popup-request" ||
+        err.code === "auth/popup-closed-by-user"
+      ) {
+        await signInWithRedirect(auth, provider);
+      } else {
+        throw err;
+      }
+    }
   };
 
   const sendPasswordReset = async (email: string) => {
