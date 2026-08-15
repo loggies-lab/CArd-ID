@@ -1,4 +1,4 @@
-import { onRequest } from "firebase-functions/v2/https";
+import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { GoogleGenAI } from "@google/genai";
 
@@ -18,46 +18,41 @@ function getPercentile(arr: number[], q: number): number {
   return sorted[base];
 }
 
-export const identifyCard = onRequest(
+export const identifyCard = onCall(
   { cors: true, secrets: [geminiApiKey] },
-  async (req, res) => {
-    res.set("Access-Control-Allow-Origin", "*");
-    res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  async (request) => {
+    const rawData = request.data?.data || request.data || {};
+    const frontBase64 = rawData.frontBase64;
+    const backBase64 = rawData.backBase64;
+    const apiKeyOverride = rawData.apiKeyOverride;
 
-    if (req.method === "OPTIONS") {
-      res.status(204).send("");
-      return;
+    const apiKey =
+      apiKeyOverride ||
+      geminiApiKey.value() ||
+      process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      throw new HttpsError(
+        "failed-precondition",
+        "GEMINI_API_KEY is missing on server environment variables."
+      );
     }
 
+    let front = frontBase64 || backBase64;
+    let back = backBase64 || frontBase64;
+
+    if (!front || !back) {
+      throw new HttpsError(
+        "invalid-argument",
+        "At least one valid image (front or back) is required for card identification."
+      );
+    }
+
+    const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
+    const frontClean = cleanBase64(front);
+    const backClean = cleanBase64(back);
+
     try {
-      const body = req.body?.data || req.body || {};
-      const frontBase64 = body.frontBase64;
-      const backBase64 = body.backBase64;
-      const apiKeyOverride = body.apiKeyOverride;
-
-      const apiKey =
-        apiKeyOverride ||
-        geminiApiKey.value() ||
-        process.env.GEMINI_API_KEY;
-
-      if (!apiKey) {
-        res.status(500).json({ error: "GEMINI_API_KEY is missing on server environment variables." });
-        return;
-      }
-
-      let front = frontBase64 || backBase64;
-      let back = backBase64 || frontBase64;
-
-      if (!front || !back) {
-        res.status(400).json({ error: "At least one valid image (front or back) is required for card identification." });
-        return;
-      }
-
-      const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
-      const frontClean = cleanBase64(front);
-      const backClean = cleanBase64(back);
-
       const ai = new GoogleGenAI({ apiKey });
 
       const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
@@ -91,7 +86,7 @@ Return ONLY a valid JSON object matching this schema:
 
       for (const modelName of modelsToTry) {
         try {
-          const resModel = await ai.models.generateContent({
+          const res = await ai.models.generateContent({
             model: modelName,
             contents: [
               { text: promptText },
@@ -102,8 +97,8 @@ Return ONLY a valid JSON object matching this schema:
               responseMimeType: "application/json",
             },
           });
-          if (resModel.text) {
-            responseText = resModel.text;
+          if (res.text) {
+            responseText = res.text;
             break;
           }
         } catch (mErr: any) {
@@ -116,8 +111,7 @@ Return ONLY a valid JSON object matching this schema:
       }
 
       if (!responseText) {
-        res.status(500).json({ error: primaryError || "Gemini Vision AI processing failed." });
-        return;
+        throw new HttpsError("internal", primaryError || "Gemini Vision AI processing failed.");
       }
 
       let parsed = JSON.parse(responseText);
@@ -130,10 +124,11 @@ Return ONLY a valid JSON object matching this schema:
       if (parsed.cardNumber) {
         parsed.cardNumber = String(parsed.cardNumber).replace(/#/g, "").trim();
       }
-      res.json({ result: parsed, ...parsed });
+      return parsed;
     } catch (err: any) {
       console.error("identifyCard Cloud Function error:", err);
-      res.status(500).json({ error: err.message || "Failed to identify card with Gemini Vision AI." });
+      if (err instanceof HttpsError) throw err;
+      throw new HttpsError("internal", err.message || "Failed to identify card with Gemini Vision AI.");
     }
   }
 );
