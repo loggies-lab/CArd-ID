@@ -26,6 +26,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   logout: () => Promise<void>;
+  enterAsGuest: () => void;
   refreshProfile: () => Promise<void>;
 }
 
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(async (result) => {
         if (result?.user && !isCancelled) {
           setCurrentUser(result.user);
+          setLoading(false);
           const profile = await getOrCreateUserProfile(result.user);
           setUserProfile(profile);
         }
@@ -73,7 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.warn("User profile background sync notice:", err);
           });
       } else {
-        setCurrentUser(null);
+        // Only clear if not in guest mode
+        setCurrentUser((prev) => ((prev as any)?.isGuest ? prev : null));
         setUserProfile(null);
         setIdToken(null);
         setLoading(false);
@@ -94,18 +97,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithEmail = async (email: string, pass: string) => {
-    await signInWithEmailAndPassword(auth, email, pass);
+    const res = await signInWithEmailAndPassword(auth, email, pass);
+    if (res.user) {
+      setCurrentUser(res.user);
+      setLoading(false);
+    }
   };
 
   const signUpWithEmail = async (email: string, pass: string) => {
-    await createUserWithEmailAndPassword(auth, email, pass);
+    const res = await createUserWithEmailAndPassword(auth, email, pass);
+    if (res.user) {
+      setCurrentUser(res.user);
+      setLoading(false);
+    }
   };
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
     try {
-      await signInWithPopup(auth, provider);
+      const res = await signInWithPopup(auth, provider);
+      if (res?.user) {
+        setCurrentUser(res.user);
+        setLoading(false);
+      }
     } catch (err: any) {
       console.warn("Popup authentication notice, attempting redirect fallback:", err?.code, err?.message);
       if (
@@ -124,7 +139,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email);
   };
 
+  const enterAsGuest = () => {
+    const guestUser = {
+      uid: "guest_user",
+      email: "guest@cardid.pro",
+      displayName: "Guest Collector",
+      isGuest: true,
+    } as any;
+    setCurrentUser(guestUser);
+    setUserProfile({
+      uid: "guest_user",
+      email: "guest@cardid.pro",
+      displayName: "Guest Collector",
+      photoURL: null,
+      createdAt: new Date().toISOString(),
+      subscriptionTier: "free",
+      scansRemaining: 50,
+      monthlyScanLimit: 50,
+      lastLogin: new Date().toISOString(),
+    });
+    setLoading(false);
+  };
+
   const logout = async () => {
+    setCurrentUser(null);
+    setUserProfile(null);
+    setIdToken(null);
     await signOut(auth);
   };
 
@@ -140,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signInWithGoogle,
         sendPasswordReset,
         logout,
+        enterAsGuest,
         refreshProfile,
       }}
     >

@@ -5,7 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Sparkles, Layers, ShieldCheck, TrendingUp, Award, Zap, Mail, Lock, AlertCircle, CheckCircle2, ArrowRight } from "lucide-react";
 
 export function LandingAuthView() {
-  const { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset } = useAuth();
+  const { signInWithEmail, signUpWithEmail, signInWithGoogle, sendPasswordReset, enterAsGuest } = useAuth();
   const [tab, setTab] = useState<"signin" | "signup" | "reset">("signin");
 
   const [email, setEmail] = useState("");
@@ -334,6 +334,17 @@ export function LandingAuthView() {
                 )}
               </button>
             </form>
+
+            <div className="pt-2 text-center border-t border-slate-800/80">
+              <button
+                type="button"
+                onClick={enterAsGuest}
+                className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition flex items-center justify-center gap-1.5 mx-auto"
+              >
+                <span>Skip Sign In & Access Dashboard</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
             {tab === "reset" && (
               <div className="text-center pt-2">
