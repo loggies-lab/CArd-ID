@@ -41,20 +41,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isCancelled = false;
 
-    // Check redirect sign-in result when returning from redirect auth
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (result?.user && !isCancelled) {
-          setCurrentUser(result.user);
-          setLoading(false);
-          const profile = await getOrCreateUserProfile(result.user);
-          setUserProfile(profile);
-        }
-      })
-      .catch((err) => {
-        console.warn("Google Redirect Auth Notice:", err?.message);
-      });
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setCurrentUser(user);
