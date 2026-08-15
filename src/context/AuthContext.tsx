@@ -122,15 +122,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     } catch (err: any) {
-      console.warn("Popup authentication notice, attempting redirect fallback:", err?.code, err?.message);
-      if (
-        err.code === "auth/popup-blocked" ||
-        err.code === "auth/cancelled-popup-request" ||
-        err.code === "auth/popup-closed-by-user"
-      ) {
+      console.warn("Popup error/COOP block notice, initiating Google redirect auth:", err?.code, err?.message);
+      // Fallback seamlessly to redirect auth if popup is blocked by COOP or browser security rules
+      try {
         await signInWithRedirect(auth, provider);
-      } else {
-        throw err;
+      } catch (redirectErr: any) {
+        console.error("Google redirect auth error:", redirectErr);
+        throw redirectErr;
       }
     }
   };
