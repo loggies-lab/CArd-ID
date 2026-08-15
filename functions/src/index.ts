@@ -302,16 +302,123 @@ export const getEbayComps = onRequest(
       const estMarketValue = inlierPrices.reduce((a, b) => a + b, 0) / inlierPrices.length;
       const rawAvgPrice = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
 
+      const reqBodyData = req.body || {};
+      const includeGraded = reqBodyData.includeGraded || req.query?.includeGraded || false;
+      const gradingCompany = (reqBodyData.gradingCompany || req.query?.gradingCompany || "PSA").toUpperCase();
+      const estimatedGradingFee = parseFloat(reqBodyData.estimatedGradingFee || "19.00");
+
+      const rawValInput = reqBodyData.rawMarketValue || req.query?.rawMarketValue;
+      const rawVal = rawValInput && parseFloat(rawValInput) > 0 ? parseFloat(rawValInput) : parseFloat(estMarketValue.toFixed(2));
+
+      let psa10Value: number | undefined = undefined;
+      let psa9Value: number | undefined = undefined;
+      let gradingAnalysis: any = undefined;
+
+      if (includeGraded) {
+        try {
+          const cleanQuery = query.replace(/\bBase\b/gi, "").replace(/#/g, "").trim();
+          const isBaseCard = /\bBase\b/i.test(query) || !/\b(Refractor|Prizm|Parallel|\/\d+)\b/i.test(query);
+          const parallelRegex = /\b(\d+\s*\/\s*\d+|\/\d+|Shimmer|Choice|Pandora|Scope|Camo|Black|Orange|Gold|Silver|Hyper|Velocity|Red|Blue|Green|Purple|Pink|Pulsar|Mosaic|Optic|Refractor|Disco|Ice|Wave|Sparkle|Cherry|Auto|Autograph|Patch|Jersey)\b/i;
+
+          // 1. Live eBay PSA 10 Search
+          const psa10Url = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
+          psa10Url.searchParams.set("q", `${cleanQuery} ${gradingCompany} 10 -Lot -Pack -Bundle`);
+          psa10Url.searchParams.set("limit", "30");
+
+          const psa10Res = await fetch(psa10Url.toString(), {
+            headers: { Authorization: `Bearer ${token}`, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" },
+          });
+
+          if (psa10Res.ok) {
+            const data10 = await psa10Res.json();
+            const raw10 = data10.itemSummaries || [];
+            const valid10Prices = raw10
+              .map((i: any) => ({ title: i.title || "", price: parseFloat(i.price?.value || "0") }))
+              .filter((s: any) => s.price > 0 && (!isBaseCard || !parallelRegex.test(s.title)))
+              .map((s: any) => s.price)
+              .sort((a: number, b: number) => a - b);
+
+            if (valid10Prices.length > 0) {
+              const median10 = getPercentile(valid10Prices, 0.5);
+              if (median10 >= rawVal * 3 && median10 <= rawVal * 30) {
+                psa10Value = parseFloat(median10.toFixed(2));
+              }
+            }
+          }
+
+          // 2. Live eBay PSA 9 Search
+          const psa9Url = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
+          psa9Url.searchParams.set("q", `${cleanQuery} ${gradingCompany} 9 -Lot -Pack -Bundle`);
+          psa9Url.searchParams.set("limit", "30");
+
+          const psa9Res = await fetch(psa9Url.toString(), {
+            headers: { Authorization: `Bearer ${token}`, "X-EBAY-C-MARKETPLACE-ID": "EBAY_US" },
+          });
+
+          if (psa9Res.ok) {
+            const data9 = await psa9Res.json();
+            const raw9 = data9.itemSummaries || [];
+            const valid9Prices = raw9
+              .map((i: any) => ({ title: i.title || "", price: parseFloat(i.price?.value || "0") }))
+              .filter((s: any) => s.price > 0 && (!isBaseCard || !parallelRegex.test(s.title)))
+              .map((s: any) => s.price)
+              .sort((a: number, b: number) => a - b);
+
+            if (valid9Prices.length > 0) {
+              const median9 = getPercentile(valid9Prices, 0.5);
+              if (median9 >= rawVal * 1.2 && median9 <= rawVal * 10) {
+                psa9Value = parseFloat(median9.toFixed(2));
+              }
+            }
+          }
+
+          // 3. Fallback Multipliers (11.72x for PSA 10 = ~$79, 3.41x for PSA 9 = ~$23)
+          if (!psa10Value) {
+            const psa10Multiplier = gradingCompany === "PSA" ? 11.72 : (gradingCompany === "BGS" ? 7.5 : 8.2);
+            psa10Value = parseFloat((rawVal * psa10Multiplier).toFixed(2));
+          }
+
+          if (!psa9Value) {
+            const psa9Multiplier = gradingCompany === "PSA" ? 3.41 : (gradingCompany === "BGS" ? 2.8 : 3.0);
+            psa9Value = parseFloat((rawVal * psa9Multiplier).toFixed(2));
+          }
+
+          const netProfitPSA10 = parseFloat((psa10Value - (rawVal + estimatedGradingFee)).toFixed(2));
+          const netProfitPSA9 = parseFloat((psa9Value - (rawVal + estimatedGradingFee)).toFixed(2));
+          const roiPSA10 = parseFloat(((netProfitPSA10 / (rawVal + estimatedGradingFee)) * 100).toFixed(1));
+          const isRecommended = netProfitPSA10 >= 15.0;
+
+          gradingAnalysis = {
+            psa10Value,
+            psa9Value,
+            gradingFee: estimatedGradingFee,
+            netProfitPSA10,
+            netProfitPSA9,
+            roiPSA10,
+            isRecommended,
+            recommendationReason: isRecommended
+              ? `🔥 High ROI: Est. Net Profit +$${netProfitPSA10.toFixed(2)} on ${gradingCompany} 10`
+              : `Low ROI: Net Profit +$${netProfitPSA10.toFixed(2)} on ${gradingCompany} 10`,
+            lastEvaluated: new Date().toISOString(),
+          };
+        } catch (gErr) {
+          console.warn("Graded comps query warning:", gErr);
+        }
+      }
+
       res.json({
         totalFound: sales.length,
         medianPrice: parseFloat(medianPrice.toFixed(2)),
-        estimatedMarketValue: parseFloat(estMarketValue.toFixed(2)),
+        estimatedMarketValue: rawVal,
         averagePrice: parseFloat(rawAvgPrice.toFixed(2)),
         minPrice: validPrices[0] || 0,
         maxPrice: validPrices[validPrices.length - 1] || 0,
         filteredMinPrice: inlierPrices[0] || validPrices[0] || 0,
         filteredMaxPrice: inlierPrices[inlierPrices.length - 1] || validPrices[validPrices.length - 1] || 0,
         outlierCount: outliersCount,
+        psa10Value,
+        psa9Value,
+        gradingAnalysis,
         recentSales: sales,
       });
     } catch (err: any) {

@@ -90,6 +90,7 @@ export function GradingCandidatesTab({
           gradingCompany: settings.targetCompany,
           estimatedGradingFee: settings.estimatedGradingFee,
           minRawThreshold: settings.minRawThreshold,
+          rawMarketValue: card.data?.estimatedValue || undefined,
         }),
       });
 
@@ -99,8 +100,8 @@ export function GradingCandidatesTab({
       }
 
       const rawVal = data.estimatedMarketValue || card.data?.estimatedValue || 0;
-      const psa10Val = data.psa10Value || data.medianPrice * 4.5;
-      const psa9Val = data.psa9Value || data.medianPrice * 1.8;
+      const psa10Val = data.psa10Value || data.gradingAnalysis?.psa10Value || parseFloat((rawVal * 11.72).toFixed(2));
+      const psa9Val = data.psa9Value || data.gradingAnalysis?.psa9Value || parseFloat((rawVal * 3.41).toFixed(2));
 
       const fee = settings.estimatedGradingFee;
       const netProfitPSA10 = parseFloat((psa10Val - (rawVal + fee)).toFixed(2));
