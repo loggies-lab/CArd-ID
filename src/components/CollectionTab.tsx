@@ -50,6 +50,7 @@ export function CollectionTab({
 }: CollectionTabProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSport, setSelectedSport] = useState("all");
+  const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
   const [filterRookie, setFilterRookie] = useState(false);
   const [filterAuto, setFilterAuto] = useState(false);
   const [filterMem, setFilterMem] = useState(false);
@@ -100,6 +101,40 @@ export function CollectionTab({
     return Array.from(set).sort();
   }, [savedCards]);
 
+  // Unique Batches list grouped by batchId
+  const availableBatches = useMemo(() => {
+    const batchMap = new Map<string, { batchId: string; batchName: string; count: number; dateAdded: string }>();
+    savedCards.forEach((c) => {
+      const bId = c.batchId || "legacy_batch";
+      const bName = c.batchName || "Initial Saved Batch";
+      const existing = batchMap.get(bId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        batchMap.set(bId, {
+          batchId: bId,
+          batchName: bName,
+          count: 1,
+          dateAdded: c.dateAdded,
+        });
+      }
+    });
+    return Array.from(batchMap.values()).sort(
+      (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+    );
+  }, [savedCards]);
+
+  // Select all cards belonging to a specific batch
+  const selectBatchCards = (batchId: string) => {
+    setSelectedBatchId(batchId);
+    if (batchId === "all") {
+      setSelectedIds(new Set());
+    } else {
+      const targetCards = savedCards.filter((c) => (c.batchId || "legacy_batch") === batchId);
+      setSelectedIds(new Set(targetCards.map((c) => c.id)));
+    }
+  };
+
   // Filtered and Sorted collection list
   const filteredCards = useMemo(() => {
     const filtered = savedCards.filter((item) => {
@@ -116,11 +151,15 @@ export function CollectionTab({
         item.prefix.toLowerCase().includes(term);
 
       const matchesSport = selectedSport === "all" || card.sport.toLowerCase() === selectedSport.toLowerCase();
+      const matchesBatch =
+        selectedBatchId === "all" ||
+        item.batchId === selectedBatchId ||
+        (!item.batchId && selectedBatchId === "legacy_batch");
       const matchesRookie = !filterRookie || card.isRookie;
       const matchesAuto = !filterAuto || card.isAutographed;
       const matchesMem = !filterMem || card.isMemorabilia;
 
-      return matchesSearch && matchesSport && matchesRookie && matchesAuto && matchesMem;
+      return matchesSearch && matchesSport && matchesBatch && matchesRookie && matchesAuto && matchesMem;
     });
 
     // Sort by active field and direction
@@ -143,7 +182,7 @@ export function CollectionTab({
 
       return sortOrder === "asc" ? comparison : -comparison;
     });
-  }, [savedCards, searchTerm, selectedSport, filterRookie, filterAuto, filterMem, sortBy, sortOrder]);
+  }, [savedCards, searchTerm, selectedSport, selectedBatchId, filterRookie, filterAuto, filterMem, sortBy, sortOrder]);
 
   // Sort Handler
   const handleHeaderSort = (field: SortField) => {
@@ -372,6 +411,80 @@ export function CollectionTab({
           <button onClick={() => setBulkSummaryMessage(null)} className="text-emerald-400 hover:text-white">
             Dismiss ✕
           </button>
+        </div>
+      )}
+
+      {/* Batch Grouping & Batch Comps Selector Bar */}
+      {availableBatches.length > 0 && (
+        <div className="rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-4 backdrop-blur-xl space-y-3 shadow-xl">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Layers className="h-4 w-4 text-cyan-400" />
+              <h4 className="text-xs font-mono font-bold text-slate-200 uppercase tracking-wider">
+                Upload Batches ({availableBatches.length})
+              </h4>
+            </div>
+
+            {selectedBatchId !== "all" && (
+              <button
+                onClick={() => selectBatchCards("all")}
+                className="text-xs font-semibold text-slate-400 hover:text-white transition"
+              >
+                Show All Batches ✕
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+            <button
+              onClick={() => selectBatchCards("all")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5 ${
+                selectedBatchId === "all"
+                  ? "bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/20"
+                  : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <span>All Batches</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px]">
+                {savedCards.length}
+              </span>
+            </button>
+
+            {availableBatches.map((b) => (
+              <button
+                key={b.batchId}
+                onClick={() => selectBatchCards(b.batchId)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5 ${
+                  selectedBatchId === b.batchId
+                    ? "bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-black shadow-md shadow-indigo-500/30 ring-1 ring-cyan-400"
+                    : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <Tag className="h-3 w-3 text-cyan-400" />
+                <span>{b.batchName}</span>
+                <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-cyan-300">
+                  {b.count} cards
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {selectedBatchId !== "all" && (
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+              <span className="text-slate-300 font-medium">
+                Active Batch: <strong className="text-cyan-400">{availableBatches.find((b) => b.batchId === selectedBatchId)?.batchName}</strong> ({selectedIds.size} cards selected)
+              </span>
+
+              <button
+                onClick={handleRunBulkComps}
+                disabled={isBulkRunning || selectedIds.size === 0}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 px-4 py-1.5 text-xs font-extrabold text-white shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50"
+              >
+                <Zap className="h-3.5 w-3.5 fill-amber-300 text-amber-300" />
+                <span>Run Sales Comps for Entire Batch ({selectedIds.size})</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

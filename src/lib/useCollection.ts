@@ -180,6 +180,8 @@ export function useCollection() {
     const newItem: SavedCollectionItem = {
       id: item.id,
       prefix: item.prefix,
+      batchId: item.batchId,
+      batchName: item.batchName,
       frontPreview,
       backPreview,
       dateAdded: new Date().toISOString(),
@@ -211,6 +213,8 @@ export function useCollection() {
         return {
           id: item.id,
           prefix: item.prefix,
+          batchId: item.batchId,
+          batchName: item.batchName,
           frontPreview,
           backPreview,
           dateAdded: new Date().toISOString(),

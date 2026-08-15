@@ -43,6 +43,8 @@ export interface CDPCardSchema {
 export interface CardItem {
   id: string;
   prefix: string;
+  batchId?: string;
+  batchName?: string;
   frontFile: File | null;
   backFile: File | null;
   frontPreview?: string;
@@ -56,6 +58,8 @@ export interface CardItem {
 export interface SavedCollectionItem {
   id: string;
   prefix: string;
+  batchId?: string;
+  batchName?: string;
   frontPreview?: string;
   backPreview?: string;
   dateAdded: string;

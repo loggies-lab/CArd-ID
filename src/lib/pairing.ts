@@ -8,7 +8,15 @@ import { CardItem } from "@/types/card";
  * - IMG_8888_front.jpeg + IMG_8888_back.jpeg -> Paired (Prefix: IMG_8888)
  * - TCS-00000002-front.jpg alone -> Unpaired Card
  */
-export function parseAndPairFiles(newFiles: File[], existingItems: CardItem[] = []): CardItem[] {
+export function parseAndPairFiles(
+  newFiles: File[],
+  existingItems: CardItem[] = [],
+  batchId?: string,
+  batchName?: string
+): CardItem[] {
+  const currentBatchId = batchId || `batch_${Date.now()}`;
+  const currentBatchName = batchName || `Batch (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })})`;
+
   // Regex pattern to extract prefix and side indicator
   const sidePattern = /[-_ ]*(front|back|f|b|1|2)[-_ ]*$/i;
 
@@ -67,6 +75,8 @@ export function parseAndPairFiles(newFiles: File[], existingItems: CardItem[] = 
 
       resultItems[existingIndex] = {
         ...existing,
+        batchId: existing.batchId || currentBatchId,
+        batchName: existing.batchName || currentBatchName,
         frontFile: updatedFront,
         backFile: updatedBack,
         frontPreview: updatedFront ? URL.createObjectURL(updatedFront) : existing.frontPreview,
@@ -78,6 +88,8 @@ export function parseAndPairFiles(newFiles: File[], existingItems: CardItem[] = 
       resultItems.push({
         id: `card-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         prefix: group.rawPrefix,
+        batchId: currentBatchId,
+        batchName: currentBatchName,
         frontFile: group.front || null,
         backFile: group.back || null,
         frontPreview: group.front ? URL.createObjectURL(group.front) : undefined,
