@@ -72,45 +72,56 @@ export function useCollection() {
   // Real-time Cloud Firestore Listener for /users/{uid}/cards
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
+    let isCancelled = false;
     setIsLoaded(false);
 
     if (uid) {
-      try {
-        const userCardsRef = collection(db, "users", uid, "cards");
-        unsubscribeFirestore = onSnapshot(
-          userCardsRef,
-          (snapshot) => {
-            const cloudCards: SavedCollectionItem[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data() as SavedCollectionItem;
-              cloudCards.push({
-                ...data,
-                id: docSnap.id,
+      // Small timeout to allow Firebase auth token exchange and IndexedDB connection to stabilize
+      const timer = setTimeout(() => {
+        if (isCancelled) return;
+        try {
+          const userCardsRef = collection(db, "users", uid, "cards");
+          unsubscribeFirestore = onSnapshot(
+            userCardsRef,
+            (snapshot) => {
+              const cloudCards: SavedCollectionItem[] = [];
+              snapshot.forEach((docSnap) => {
+                const data = docSnap.data() as SavedCollectionItem;
+                cloudCards.push({
+                  ...data,
+                  id: docSnap.id,
+                });
               });
-            });
 
-            cloudCards.sort(
-              (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-            );
+              cloudCards.sort(
+                (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+              );
 
-            setSavedCards(cloudCards);
-            setIsLoaded(true);
+              setSavedCards(cloudCards);
+              setIsLoaded(true);
 
-            try {
-              localStorage.setItem(storageKey, JSON.stringify(cloudCards));
-            } catch (e) {
-              // Ignore quota error
+              try {
+                localStorage.setItem(storageKey, JSON.stringify(cloudCards));
+              } catch (e) {
+                // Ignore quota error
+              }
+            },
+            (error) => {
+              console.warn("User collection Firestore listener transient notice:", error?.message);
+              loadFromLocalStorage();
             }
-          },
-          (error) => {
-            console.warn("User collection Firestore listener error, loading local cache:", error);
-            loadFromLocalStorage();
-          }
-        );
-      } catch (err) {
-        console.warn("Firestore initialization error, loading local cache:", err);
-        loadFromLocalStorage();
-      }
+          );
+        } catch (err) {
+          console.warn("Firestore listener initialization fallback:", err);
+          loadFromLocalStorage();
+        }
+      }, 150);
+
+      return () => {
+        isCancelled = true;
+        clearTimeout(timer);
+        if (unsubscribeFirestore) unsubscribeFirestore();
+      };
     } else {
       loadFromLocalStorage();
     }
