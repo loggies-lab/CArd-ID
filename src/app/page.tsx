@@ -14,8 +14,9 @@ import { identifyCardClientSide } from "@/lib/geminiClient";
 import { CardItem, SavedCollectionItem, CDPCardSchema, UserGradingSettings } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award } from "lucide-react";
 
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
+import { LandingAuthView } from "@/components/LandingAuthView";
 
 const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
   minRawThreshold: 30.0,
@@ -25,6 +26,8 @@ const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
 };
 
 function CardIdApp() {
+  const { currentUser, loading } = useAuth();
+
   const [activeTab, setActiveTab] = useState<"scanner" | "collection" | "grading">("scanner");
   const [items, setItems] = useState<CardItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -274,6 +277,21 @@ function CardIdApp() {
       prev.map((i) => (i.id === cardId ? updated : i))
     );
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-4 font-sans">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/30 animate-pulse">
+          <Sparkles className="w-6 h-6 text-white" />
+        </div>
+        <p className="text-xs font-mono text-cyan-400 animate-pulse">Initializing secure user session...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LandingAuthView />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-500 selection:text-slate-950 font-sans">
