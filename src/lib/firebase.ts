@@ -1,6 +1,11 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 
 // Firebase Web SDK Configuration for card-id-app
@@ -16,9 +21,21 @@ const firebaseConfig = {
 // Initialize Firebase App singleton
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Auth, Cloud Firestore Database & Cloud Functions
+// Initialize Auth
 const auth = getAuth(app);
-const db = getFirestore(app);
+
+// Initialize Firestore with Multi-Tab Persistence Manager to prevent popup IndexedDB closing errors
+let db: ReturnType<typeof getFirestore>;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  });
+} catch (e) {
+  db = getFirestore(app);
+}
+
 const functions = getFunctions(app);
 
 export { app, auth, db, functions };

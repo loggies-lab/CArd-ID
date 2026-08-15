@@ -36,28 +36,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    let isCancelled = false;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
       if (user) {
         setCurrentUser(user);
         try {
           const token = await user.getIdToken();
-          setIdToken(token);
+          if (!isCancelled) setIdToken(token);
 
-          const profile = await getOrCreateUserProfile(user);
-          setUserProfile(profile);
+          // 250ms stabilization delay allows auth popups to release storage locks cleanly
+          setTimeout(async () => {
+            if (isCancelled) return;
+            try {
+              const profile = await getOrCreateUserProfile(user);
+              if (!isCancelled) setUserProfile(profile);
+            } catch (err) {
+              console.warn("User profile fetch delayed retry:", err);
+            } finally {
+              if (!isCancelled) setLoading(false);
+            }
+          }, 250);
         } catch (err) {
-          console.error("Failed to load user profile or token:", err);
+          console.error("Failed to load user token:", err);
+          if (!isCancelled) setLoading(false);
         }
       } else {
         setCurrentUser(null);
         setUserProfile(null);
         setIdToken(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      isCancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   const refreshProfile = async () => {
