@@ -60,13 +60,16 @@ export function AuthModal({ isOpen, onClose, initialTab = "signin" }: AuthModalP
         setSuccessMsg("Password reset email sent! Check your inbox.");
       }
     } catch (err: any) {
+      console.warn("Authentication submit error:", err?.code, err?.message);
       let msg = err.message || "An authentication error occurred.";
       if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password") {
-        msg = "Invalid email or password.";
+        msg = "Invalid email or password. If your account was created with Google, please click 'Continue with Google' below.";
+      } else if (err.code === "auth/account-exists-with-different-credential") {
+        msg = "An account with this email was registered using Google. Click 'Continue with Google' below to sign in.";
       } else if (err.code === "auth/email-already-in-use") {
-        msg = "An account with this email already exists.";
+        msg = "An account with this email already exists. Try signing in or click 'Continue with Google'.";
       } else if (err.code === "auth/user-not-found") {
-        msg = "No account found with this email.";
+        msg = "No account found with this email. Please click Sign Up or Continue with Google.";
       }
       setErrorMsg(msg);
     } finally {
