@@ -141,7 +141,17 @@ export default function Home() {
             throw new Error(json.error || "Vision identification failed.");
           }
 
-          const cardData = json.card || json;
+          const rawCardData = (json.result || json.card || json) as any;
+          const player = rawCardData.playerName || rawCardData.subject || rawCardData.player || "";
+          const brand = rawCardData.brand || rawCardData.publisher || "";
+
+          const cardData = {
+            ...rawCardData,
+            playerName: player,
+            subject: player,
+            brand: brand,
+            publisher: brand,
+          };
 
           return {
             ...item,

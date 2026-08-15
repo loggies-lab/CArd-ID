@@ -31,20 +31,22 @@ export async function identifyCardClientSide(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
+      const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
 
 Return ONLY a valid JSON object matching this schema:
 {
   "cardFound": true,
   "confidenceScore": 0.98,
-  "subject": "Player Name",
+  "playerName": "Full Player / Athlete Name (e.g. Michael Jordan, Ken Griffey Jr.)",
+  "subject": "Full Player / Athlete Name",
   "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
   "subsetParallel": "Parallels / Refractor / Base",
   "team": "Team Name",
   "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
   "year": 2024,
-  "publisher": "Topps / Panini / Upper Deck",
+  "brand": "Topps / Panini / Upper Deck / Fleer / Donruss",
+  "publisher": "Publisher / Brand Name",
   "setName": "Set Name",
   "isRookie": false,
   "isAutographed": false,
@@ -100,6 +102,12 @@ DO NOT output mock fallbacks or generic default values.`;
   }
 
   const parsedData = parseCleanJson(responseText);
+  const player = parsedData.playerName || parsedData.subject || parsedData.player || "";
+  const brand = parsedData.brand || parsedData.publisher || "";
+  parsedData.playerName = player;
+  parsedData.subject = player;
+  parsedData.brand = brand;
+  parsedData.publisher = brand;
 
   if (parsedData.cardNumber) {
     parsedData.cardNumber = String(parsedData.cardNumber).replace(/#/g, "").trim();

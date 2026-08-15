@@ -36,8 +36,9 @@ export function generateCdpTitle(card: {
   }
 
   // 3. Player Name
-  if (card.playerName) {
-    parts.push(card.playerName.trim());
+  const playerVal = card.playerName || (card as any).subject || (card as any).player;
+  if (playerVal) {
+    parts.push(String(playerVal).trim());
   }
 
   // 4. Subset / Parallel (Ignore if 'Base')

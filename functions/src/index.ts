@@ -42,13 +42,15 @@ Return ONLY a valid JSON object matching this schema:
 {
   "cardFound": true,
   "confidenceScore": 0.98,
-  "subject": "Player Name",
+  "playerName": "Full Player / Athlete Name (e.g. Michael Jordan, Ken Griffey Jr.)",
+  "subject": "Full Player / Athlete Name",
   "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
   "subsetParallel": "Parallels / Refractor / Base",
   "team": "Team Name",
   "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
   "year": 2024,
-  "publisher": "Topps / Panini / Upper Deck",
+  "brand": "Topps / Panini / Upper Deck / Fleer / Donruss",
+  "publisher": "Publisher / Brand Name",
   "setName": "Set Name",
   "isRookie": false,
   "isAutographed": false,
@@ -93,6 +95,12 @@ Return ONLY a valid JSON object matching this schema:
       }
 
       let parsed = JSON.parse(responseText);
+      const player = parsed.playerName || parsed.subject || parsed.player || "";
+      const brand = parsed.brand || parsed.publisher || "";
+      parsed.playerName = player;
+      parsed.subject = player;
+      parsed.brand = brand;
+      parsed.publisher = brand;
       if (parsed.cardNumber) {
         parsed.cardNumber = String(parsed.cardNumber).replace(/#/g, "").trim();
       }

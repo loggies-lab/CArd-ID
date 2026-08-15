@@ -10,9 +10,9 @@ export function exportCardsToCSV(items: CardItem[], customFilename = "cdp_card_i
     return {
       "Prefix / ID": item.prefix,
       "Card Number": card?.cardNumber || "",
-      "Player Name": card?.playerName || "",
+      "Player Name": card?.playerName || (card as any)?.subject || (card as any)?.player || "",
       "Set Name": card?.setName || "",
-      "Brand": card?.brand || "",
+      "Brand": card?.brand || (card as any)?.publisher || "",
       "Subset / Parallel": card?.subsetParallel || "",
       "Team": card?.team || "",
       "Sport": card?.sport || "",
