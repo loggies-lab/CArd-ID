@@ -101,10 +101,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    const res = await signInWithPopup(auth, provider);
-    if (res?.user) {
-      setCurrentUser(res.user);
-      setLoading(false);
+    try {
+      const res = await signInWithPopup(auth, provider);
+      if (res?.user) {
+        setCurrentUser(res.user);
+        setLoading(false);
+      }
+    } catch (err: any) {
+      console.error("Google Sign-In Error Code:", err?.code, "Message:", err?.message);
+      throw err;
     }
   };
 
