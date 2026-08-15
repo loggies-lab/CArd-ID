@@ -13,8 +13,7 @@ exports.identifyCard = (0, https_1.onCall)({
     const { frontBase64, backBase64, apiKeyOverride } = request.data || {};
     const apiKey = apiKeyOverride ||
         process.env.GEMINI_API_KEY ||
-        process.env.GEMINI_KEY ||
-        "AIzaSyBCleNRqRE2YP4aVgNUVNU4WLiygjmrrPI";
+        "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
     if (!apiKey) {
         throw new https_1.HttpsError("failed-precondition", "GEMINI_API_KEY is missing on server environment variables.");
     }
@@ -44,7 +43,7 @@ Return valid JSON with these exact keys:
 - isNumbered (boolean)`;
         let responseText = "";
         let primaryError = "";
-        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
+        const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
         for (const modelName of modelsToTry) {
             try {
                 const res = await ai.models.generateContent({
@@ -65,7 +64,7 @@ Return valid JSON with these exact keys:
             }
             catch (mErr) {
                 const errMsg = mErr.message || String(mErr);
-                if (!primaryError) {
+                if (!primaryError || mErr.status === 429) {
                     primaryError = errMsg;
                 }
                 console.warn(`Model ${modelName} failed:`, errMsg);

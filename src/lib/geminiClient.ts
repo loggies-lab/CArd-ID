@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const DEFAULT_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyBCleNRqRE2YP4aVgNUVNU4WLiygjmrrPI";
+const DEFAULT_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
 
 const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
 
@@ -59,7 +59,7 @@ DO NOT output mock fallbacks or generic default values.`;
 
   let responseText = "";
   let primaryError = "";
-  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
+  const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
 
   for (const modelName of modelsToTry) {
     try {
@@ -82,7 +82,7 @@ DO NOT output mock fallbacks or generic default values.`;
       }
     } catch (mErr: any) {
       const errMsg = mErr.message || String(mErr);
-      if (!primaryError) {
+      if (!primaryError || mErr.status === 429) {
         primaryError = errMsg;
       }
       console.warn(`Model ${modelName} failed:`, errMsg);

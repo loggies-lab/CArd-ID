@@ -17,7 +17,7 @@ export async function OPTIONS() {
 // 2. Main POST endpoint with CORS headers
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyBCleNRqRE2YP4aVgNUVNU4WLiygjmrrPI";
+    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -60,7 +60,7 @@ Return valid JSON with these exact keys:
 
     let responseText = "";
     let primaryError = "";
-    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
+    const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
 
     for (const modelName of modelsToTry) {
       try {
@@ -81,7 +81,7 @@ Return valid JSON with these exact keys:
         }
       } catch (mErr: any) {
         const errMsg = mErr.message || String(mErr);
-        if (!primaryError) {
+        if (!primaryError || mErr.status === 429) {
           primaryError = errMsg;
         }
         console.warn(`Model ${modelName} failed:`, errMsg);
