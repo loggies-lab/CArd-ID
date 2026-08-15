@@ -59,8 +59,8 @@ Return valid JSON with these exact keys:
 - isNumbered (boolean)`;
 
     let responseText = "";
-    let lastError = "";
-    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+    let primaryError = "";
+    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
 
     for (const modelName of modelsToTry) {
       try {
@@ -81,15 +81,15 @@ Return valid JSON with these exact keys:
         }
       } catch (mErr: any) {
         const errMsg = mErr.message || String(mErr);
-        if (!lastError || !errMsg.includes("no longer available")) {
-          lastError = errMsg;
+        if (!primaryError) {
+          primaryError = errMsg;
         }
-        console.warn(`Model ${modelName} failed, trying fallback:`, errMsg);
+        console.warn(`Model ${modelName} failed:`, errMsg);
       }
     }
 
     if (!responseText) {
-      throw new Error(lastError || "Empty response from Gemini model.");
+      throw new Error(primaryError || "Empty response from Gemini model.");
     }
 
     let parsed = JSON.parse(responseText);

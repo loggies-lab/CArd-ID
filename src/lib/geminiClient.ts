@@ -58,8 +58,8 @@ DO NOT output mock fallbacks or generic default values.`;
   const backClean = cleanBase64(backBase64);
 
   let responseText = "";
-  let lastError = "";
-  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+  let primaryError = "";
+  const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
 
   for (const modelName of modelsToTry) {
     try {
@@ -82,14 +82,14 @@ DO NOT output mock fallbacks or generic default values.`;
       }
     } catch (mErr: any) {
       const errMsg = mErr.message || String(mErr);
-      if (!lastError || !errMsg.includes("no longer available")) {
-        lastError = errMsg;
+      if (!primaryError) {
+        primaryError = errMsg;
       }
-      console.warn(`Model ${modelName} failed, trying fallback:`, errMsg);
+      console.warn(`Model ${modelName} failed:`, errMsg);
     }
   }
   if (!responseText) {
-    throw new Error(lastError || "Empty response received from Gemini Vision AI.");
+    throw new Error(primaryError || "Empty response received from Gemini Vision AI.");
   }
 
   const parsedData = parseCleanJson(responseText);

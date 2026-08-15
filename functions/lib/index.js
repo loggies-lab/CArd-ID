@@ -43,8 +43,8 @@ Return valid JSON with these exact keys:
 - isMemorabilia (boolean)
 - isNumbered (boolean)`;
         let responseText = "";
-        let lastError = "";
-        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"];
+        let primaryError = "";
+        const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro"];
         for (const modelName of modelsToTry) {
             try {
                 const res = await ai.models.generateContent({
@@ -65,14 +65,14 @@ Return valid JSON with these exact keys:
             }
             catch (mErr) {
                 const errMsg = mErr.message || String(mErr);
-                if (!lastError || !errMsg.includes("no longer available")) {
-                    lastError = errMsg;
+                if (!primaryError) {
+                    primaryError = errMsg;
                 }
-                console.warn(`Model ${modelName} failed, trying fallback:`, errMsg);
+                console.warn(`Model ${modelName} failed:`, errMsg);
             }
         }
         if (!responseText) {
-            throw new https_1.HttpsError("internal", lastError || "Gemini Vision AI processing failed.");
+            throw new https_1.HttpsError("internal", primaryError || "Gemini Vision AI processing failed.");
         }
         let parsed = JSON.parse(responseText);
         if (parsed.cardNumber) {
