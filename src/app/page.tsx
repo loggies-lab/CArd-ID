@@ -136,9 +136,25 @@ export default function Home() {
         }),
       });
 
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        throw new Error(json.error || "Vision identification failed.");
+      let json: any = null;
+      try {
+        json = await res.json();
+      } catch (parseErr) {
+        throw new Error(`HTTP Error ${res.status}: ${res.statusText}`);
+      }
+
+      if (!res.ok || json?.error) {
+        let errMessage = "Vision identification failed.";
+        if (json?.error) {
+          if (typeof json.error === "string") {
+            errMessage = json.error;
+          } else if (typeof json.error === "object") {
+            errMessage = json.error.message || json.error.error?.message || JSON.stringify(json.error);
+          }
+        } else if (!res.ok) {
+          errMessage = `HTTP Error ${res.status}: ${res.statusText}`;
+        }
+        throw new Error(errMessage);
       }
 
       const rawCardData = (json.result || json.card || json) as any;
