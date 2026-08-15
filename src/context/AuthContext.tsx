@@ -7,6 +7,8 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider,
   sendPasswordResetEmail,
   signOut,
@@ -38,6 +40,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isCancelled = false;
 
+    // Check redirect sign-in result when returning from redirect auth
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user && !isCancelled) {
+          setCurrentUser(result.user);
+          const profile = await getOrCreateUserProfile(result.user);
+          setUserProfile(profile);
+        }
+      })
+      .catch((err) => {
+        console.warn("Google Redirect Auth Notice:", err?.message);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setLoading(true);
       if (user) {
@@ -46,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const token = await user.getIdToken();
           if (!isCancelled) setIdToken(token);
 
-          // 250ms stabilization delay allows auth popups to release storage locks cleanly
           setTimeout(async () => {
             if (isCancelled) return;
             try {
@@ -93,7 +107,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    provider.setCustomParameters({ prompt: "select_account" });
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      console.warn("Popup authentication error/notice:", err?.code, err?.message);
+      if (err.code === "auth/popup-blocked" || err.code === "auth/cancelled-popup-request") {
+        await signInWithRedirect(auth, provider);
+      } else {
+        throw err;
+      }
+    }
   };
 
   const sendPasswordReset = async (email: string) => {
