@@ -1,7 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-const DEFAULT_GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY || "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
-
 const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
 
 function parseCleanJson(rawText: string) {
@@ -19,39 +17,48 @@ function parseCleanJson(rawText: string) {
 }
 
 /**
- * Executes Gemini 2.0 Flash Vision AI card identification directly in the client browser.
- * Uses built-in Google Cloud API key if no custom key is specified.
+ * Executes Gemini Vision AI card identification directly in the client browser.
  */
 export async function identifyCardClientSide(
   frontBase64: string,
   backBase64: string,
-  apiKey?: string
+  customApiKey?: string
 ) {
-  const keyToUse = apiKey || DEFAULT_GEMINI_API_KEY;
-
-  if (!keyToUse) {
-    throw new Error("Gemini API Key is required for vision processing.");
+  const apiKey = customApiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
+  if (!apiKey) {
+    throw new Error("No Gemini API key provided for client-side identification.");
   }
 
-  const ai = new GoogleGenAI({ apiKey: keyToUse });
+  const ai = new GoogleGenAI({ apiKey });
 
   const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
 
-Return valid JSON with these exact keys:
-- playerName (string)
-- brand (string)
-- setName (string)
-- cardNumber (string, pure alphanumeric without '#' symbol, e.g., "245" or "BCV-166")
-- subsetParallel (string)
-- team (string)
-- sport (string)
-- year (number)
-- isRookie (boolean)
-- isAutographed (boolean)
-- isMemorabilia (boolean)
-- isNumbered (boolean)
+Return ONLY a valid JSON object matching this schema:
+{
+  "cardFound": true,
+  "confidenceScore": 0.98,
+  "subject": "Player Name",
+  "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
+  "subsetParallel": "Parallels / Refractor / Base",
+  "team": "Team Name",
+  "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
+  "year": 2024,
+  "publisher": "Topps / Panini / Upper Deck",
+  "setName": "Set Name",
+  "isRookie": false,
+  "isAutographed": false,
+  "isMemorabilia": false,
+  "isNumbered": false,
+  "numberedTo": 99,
+  "notes": "Any distinguishing features"
+}
 
+CRITICAL CDP COMPLIANCE RULES:
+1. "cardNumber": Must NEVER contain a '#' symbol (e.g., use "101" instead of "#101").
+2. "confidenceScore": Float between 0.0 and 1.0.
+3. If no card is visible or image is unreadable, set "cardFound": false.
+4. DO NOT wrap JSON in markdown syntax if possible, or return clean JSON code block.
 DO NOT output mock fallbacks or generic default values.`;
 
   const frontClean = cleanBase64(frontBase64);
@@ -59,7 +66,7 @@ DO NOT output mock fallbacks or generic default values.`;
 
   let responseText = "";
   let primaryError = "";
-  const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
+  const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
 
   for (const modelName of modelsToTry) {
     try {
@@ -94,7 +101,6 @@ DO NOT output mock fallbacks or generic default values.`;
 
   const parsedData = parseCleanJson(responseText);
 
-  // CDP Rule 1 Enforcement: Never include '#' in cardNumber
   if (parsedData.cardNumber) {
     parsedData.cardNumber = String(parsedData.cardNumber).replace(/#/g, "").trim();
   }

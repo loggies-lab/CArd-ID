@@ -1,22 +1,18 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { initializeApp } from "firebase-admin/app";
+import { defineSecret } from "firebase-functions/params";
 import { GoogleGenAI } from "@google/genai";
 
-initializeApp();
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 export const identifyCard = onCall(
-  {
-    cors: true,
-    maxInstances: 10,
-    timeoutSeconds: 60,
-  },
+  { cors: true, secrets: [geminiApiKey] },
   async (request) => {
     const { frontBase64, backBase64, apiKeyOverride } = request.data || {};
 
     const apiKey =
       apiKeyOverride ||
-      process.env.GEMINI_API_KEY ||
-      "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
+      geminiApiKey.value() ||
+      process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       throw new HttpsError(
@@ -42,23 +38,29 @@ export const identifyCard = onCall(
       const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
 
-Return valid JSON with these exact keys:
-- playerName (string)
-- brand (string)
-- setName (string)
-- cardNumber (string, pure alphanumeric without '#' symbol)
-- subsetParallel (string)
-- team (string)
-- sport (string)
-- year (number)
-- isRookie (boolean)
-- isAutographed (boolean)
-- isMemorabilia (boolean)
-- isNumbered (boolean)`;
+Return ONLY a valid JSON object matching this schema:
+{
+  "cardFound": true,
+  "confidenceScore": 0.98,
+  "subject": "Player Name",
+  "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
+  "subsetParallel": "Parallels / Refractor / Base",
+  "team": "Team Name",
+  "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
+  "year": 2024,
+  "publisher": "Topps / Panini / Upper Deck",
+  "setName": "Set Name",
+  "isRookie": false,
+  "isAutographed": false,
+  "isMemorabilia": false,
+  "isNumbered": false,
+  "numberedTo": 99,
+  "notes": "Any distinguishing features"
+}`;
 
       let responseText = "";
       let primaryError = "";
-      const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
+      const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
 
       for (const modelName of modelsToTry) {
         try {
@@ -94,14 +96,10 @@ Return valid JSON with these exact keys:
       if (parsed.cardNumber) {
         parsed.cardNumber = String(parsed.cardNumber).replace(/#/g, "").trim();
       }
-
       return parsed;
     } catch (err: any) {
-      console.error("identifyCard Cloud Function Error:", err);
-      if (err instanceof HttpsError) {
-        throw err;
-      }
-      throw new HttpsError("internal", err.message || "Card identification failed.");
+      console.error("identifyCard Cloud Function error:", err);
+      throw new HttpsError("internal", err.message || "Failed to identify card with Gemini Vision AI.");
     }
   }
 );

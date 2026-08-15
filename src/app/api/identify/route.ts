@@ -4,20 +4,18 @@ import { GoogleGenAI } from "@google/genai";
 export const maxDuration = 60;
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // Allows requests from card-id-app.web.app
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// 1. Handle browser preflight OPTIONS request
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// 2. Main POST endpoint with CORS headers
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
+    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || "";
 
     if (!apiKey) {
       return NextResponse.json(
@@ -27,8 +25,9 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+    const { frontBase64, backBase64 } = body;
 
-    if (!body.frontBase64 || !body.backBase64) {
+    if (!frontBase64 || !backBase64) {
       return NextResponse.json(
         { error: "Both frontBase64 and backBase64 image strings are required." },
         { status: 400, headers: corsHeaders }
@@ -36,31 +35,37 @@ export async function POST(req: Request) {
     }
 
     const cleanBase64 = (str: string) => str.replace(/^data:image\/\w+;base64,/, "");
-    const frontClean = cleanBase64(body.frontBase64);
-    const backClean = cleanBase64(body.backBase64);
+    const frontClean = cleanBase64(frontBase64);
+    const backClean = cleanBase64(backBase64);
 
     const ai = new GoogleGenAI({ apiKey });
 
     const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
 
-Return valid JSON with these exact keys:
-- playerName (string)
-- brand (string)
-- setName (string)
-- cardNumber (string, pure alphanumeric without '#' symbol)
-- subsetParallel (string)
-- team (string)
-- sport (string)
-- year (number)
-- isRookie (boolean)
-- isAutographed (boolean)
-- isMemorabilia (boolean)
-- isNumbered (boolean)`;
+Return ONLY a valid JSON object matching this schema:
+{
+  "cardFound": true,
+  "confidenceScore": 0.98,
+  "subject": "Player Name",
+  "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
+  "subsetParallel": "Parallels / Refractor / Base",
+  "team": "Team Name",
+  "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
+  "year": 2024,
+  "publisher": "Topps / Panini / Upper Deck",
+  "setName": "Set Name",
+  "isRookie": false,
+  "isAutographed": false,
+  "isMemorabilia": false,
+  "isNumbered": false,
+  "numberedTo": 99,
+  "notes": "Any distinguishing features"
+}`;
 
     let responseText = "";
     let primaryError = "";
-    const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
+    const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
 
     for (const modelName of modelsToTry) {
       try {
@@ -98,12 +103,10 @@ Return valid JSON with these exact keys:
     }
 
     return NextResponse.json(parsed, { headers: corsHeaders });
-
   } catch (error: any) {
-    console.error("=== API SERVER ERROR ===");
-    console.error(error.stack || error);
+    console.error("Error in POST /api/identify:", error);
     return NextResponse.json(
-      { error: error.message || "Internal Server Error" },
+      { error: error.message || "Failed to identify card" },
       { status: 500, headers: corsHeaders }
     );
   }

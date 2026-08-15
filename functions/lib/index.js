@@ -2,18 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.identifyCard = void 0;
 const https_1 = require("firebase-functions/v2/https");
-const app_1 = require("firebase-admin/app");
+const params_1 = require("firebase-functions/params");
 const genai_1 = require("@google/genai");
-(0, app_1.initializeApp)();
-exports.identifyCard = (0, https_1.onCall)({
-    cors: true,
-    maxInstances: 10,
-    timeoutSeconds: 60,
-}, async (request) => {
+const geminiApiKey = (0, params_1.defineSecret)("GEMINI_API_KEY");
+exports.identifyCard = (0, https_1.onCall)({ cors: true, secrets: [geminiApiKey] }, async (request) => {
     const { frontBase64, backBase64, apiKeyOverride } = request.data || {};
     const apiKey = apiKeyOverride ||
-        process.env.GEMINI_API_KEY ||
-        "AIzaSyARlxPXG7-Nqo4_HSzWyYwgS7YGVKIvPtE";
+        geminiApiKey.value() ||
+        process.env.GEMINI_API_KEY;
     if (!apiKey) {
         throw new https_1.HttpsError("failed-precondition", "GEMINI_API_KEY is missing on server environment variables.");
     }
@@ -28,22 +24,28 @@ exports.identifyCard = (0, https_1.onCall)({
         const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
 
-Return valid JSON with these exact keys:
-- playerName (string)
-- brand (string)
-- setName (string)
-- cardNumber (string, pure alphanumeric without '#' symbol)
-- subsetParallel (string)
-- team (string)
-- sport (string)
-- year (number)
-- isRookie (boolean)
-- isAutographed (boolean)
-- isMemorabilia (boolean)
-- isNumbered (boolean)`;
+Return ONLY a valid JSON object matching this schema:
+{
+  "cardFound": true,
+  "confidenceScore": 0.98,
+  "subject": "Player Name",
+  "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
+  "subsetParallel": "Parallels / Refractor / Base",
+  "team": "Team Name",
+  "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
+  "year": 2024,
+  "publisher": "Topps / Panini / Upper Deck",
+  "setName": "Set Name",
+  "isRookie": false,
+  "isAutographed": false,
+  "isMemorabilia": false,
+  "isNumbered": false,
+  "numberedTo": 99,
+  "notes": "Any distinguishing features"
+}`;
         let responseText = "";
         let primaryError = "";
-        const modelsToTry = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-pro-latest"];
+        const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
         for (const modelName of modelsToTry) {
             try {
                 const res = await ai.models.generateContent({
@@ -80,11 +82,8 @@ Return valid JSON with these exact keys:
         return parsed;
     }
     catch (err) {
-        console.error("identifyCard Cloud Function Error:", err);
-        if (err instanceof https_1.HttpsError) {
-            throw err;
-        }
-        throw new https_1.HttpsError("internal", err.message || "Card identification failed.");
+        console.error("identifyCard Cloud Function error:", err);
+        throw new https_1.HttpsError("internal", err.message || "Failed to identify card with Gemini Vision AI.");
     }
 });
 //# sourceMappingURL=index.js.map
