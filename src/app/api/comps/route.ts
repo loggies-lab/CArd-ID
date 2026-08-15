@@ -9,11 +9,11 @@ async function getEbayAccessToken() {
     return cachedToken;
   }
 
-  const clientId = process.env.EBAY_CLIENT_ID;
-  const clientSecret = process.env.EBAY_CLIENT_SECRET;
+  const clientId = process.env.EBAY_CLIENT_ID || "";
+  const clientSecret = process.env.EBAY_CLIENT_SECRET || "";
 
   if (!clientId || !clientSecret) {
-    throw new Error("Missing EBAY_CLIENT_ID or EBAY_CLIENT_SECRET in .env.local");
+    throw new Error("Missing EBAY_CLIENT_ID or EBAY_CLIENT_SECRET");
   }
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
@@ -42,7 +42,6 @@ async function getEbayAccessToken() {
   return cachedToken;
 }
 
-// Statistical calculation helper for Percentiles (Q1, Median, Q3)
 function getPercentile(arr: number[], q: number): number {
   if (arr.length === 0) return 0;
   const sorted = [...arr].sort((a, b) => a - b);
@@ -59,17 +58,20 @@ export async function POST(req: Request) {
   try {
     const { query } = await req.json();
 
-    if (!query) {
+    if (!query || typeof query !== "string") {
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    console.log("--> Fetching eBay sold comps for query:", query);
+    const cleanQuery = query.trim();
+    console.log("--> Fetching raw eBay comps for query:", cleanQuery);
 
     const token = await getEbayAccessToken();
 
+    // Raw Card Search: Append negative terms to exclude graded slabs & bulk lots
+    const rawSearchQuery = `${cleanQuery} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
     const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
-    searchUrl.searchParams.set("q", query);
-    searchUrl.searchParams.set("limit", "15");
+    searchUrl.searchParams.set("q", rawSearchQuery);
+    searchUrl.searchParams.set("limit", "50");
 
     const ebayRes = await fetch(searchUrl.toString(), {
       headers: {
@@ -85,35 +87,56 @@ export async function POST(req: Request) {
     }
 
     const searchData = await ebayRes.json();
-    const items = searchData.itemSummaries || [];
+    const rawItems = searchData.itemSummaries || [];
 
-    if (items.length === 0) {
-      return NextResponse.json({
-        totalFound: 0,
-        medianPrice: 0,
-        estimatedMarketValue: 0,
-        averagePrice: 0,
-        minPrice: 0,
-        maxPrice: 0,
-        filteredMinPrice: 0,
-        filteredMaxPrice: 0,
-        outlierCount: 0,
-        recentSales: [],
+    const gradedRegex = /\b(PSA|BGS|SGC|CGC|GMA|TAG|HGA|BVG|GAI|KSA|SLAB|GRADED|GEM\s*MINT|MINT\s*10|PSA\s*\d+|BGS\s*\d+)\b/i;
+    const lotRegex = /\b(LOT\s*OF|BUNDLE|PACK|BOX|CASE|SET|REPRINT|DIGITAL)\b/i;
+
+    const sales: Array<{
+      title: string;
+      price: number;
+      currency: string;
+      imageUrl: string;
+      itemWebUrl: string;
+      isOutlier: boolean;
+      outlierReason?: string;
+    }> = [];
+
+    for (const item of rawItems) {
+      const title = item.title || "";
+      const price = parseFloat(item.price?.value || "0");
+      const currency = item.price?.currency || "USD";
+      const imageUrl = item.image?.imageUrl || "";
+      const itemWebUrl = item.itemWebUrl || "";
+
+      if (price <= 0) continue;
+
+      let isOutlier = false;
+      let outlierReason: string | undefined = undefined;
+
+      if (gradedRegex.test(title)) {
+        isOutlier = true;
+        outlierReason = "Graded Slab (PSA/BGS/SGC)";
+      } else if (lotRegex.test(title)) {
+        isOutlier = true;
+        outlierReason = "Bulk Lot / Bundle";
+      }
+
+      sales.push({
+        title,
+        price,
+        currency,
+        imageUrl,
+        itemWebUrl,
+        isOutlier,
+        outlierReason,
       });
     }
 
-    const sales = items.map((item: any) => ({
-      title: item.title,
-      price: parseFloat(item.price?.value || "0"),
-      currency: item.price?.currency || "USD",
-      imageUrl: item.image?.imageUrl || "",
-      itemWebUrl: item.itemWebUrl || "",
-    }));
-
-    const validPrices = sales
-      .map((s: any) => s.price)
-      .filter((p: number) => p > 0)
-      .sort((a: number, b: number) => a - b);
+    const nonGradedSales = sales.filter((s) => !s.isOutlier);
+    const validPrices = (nonGradedSales.length > 0 ? nonGradedSales : sales)
+      .map((s) => s.price)
+      .sort((a, b) => a - b);
 
     if (validPrices.length === 0) {
       return NextResponse.json({
@@ -125,39 +148,46 @@ export async function POST(req: Request) {
         maxPrice: 0,
         filteredMinPrice: 0,
         filteredMaxPrice: 0,
-        outlierCount: 0,
+        outlierCount: sales.length,
         recentSales: sales,
       });
     }
 
-    // 1. Median Price (Outlier-Immune Middle Value)
     const medianPrice = getPercentile(validPrices, 0.5);
-
-    // 2. Interquartile Range (IQR) Outlier Filtering (1.5x IQR Rule)
     const q1 = getPercentile(validPrices, 0.25);
     const q3 = getPercentile(validPrices, 0.75);
     const iqr = q3 - q1;
-    const lowerBound = q1 - 1.5 * iqr;
+    const lowerBound = Math.max(0.5, q1 - 1.5 * iqr);
     const upperBound = q3 + 1.5 * iqr;
 
-    // Filter out extreme prices (e.g. $36.00 signed card when base is $1-$2)
-    const filteredPrices = validPrices.filter((p: number) => p >= lowerBound && p <= upperBound);
-    const outliersCount = validPrices.length - filteredPrices.length;
+    let inlierPrices: number[] = [];
+    let outliersCount = 0;
 
-    // 3. Estimated Fair Market Value (Trimmed Mean)
-    const estMarketValue =
-      filteredPrices.length > 0
-        ? filteredPrices.reduce((a: number, b: number) => a + b, 0) / filteredPrices.length
-        : medianPrice;
+    sales.forEach((s) => {
+      if (!s.isOutlier) {
+        const isPriceOutlier =
+          s.price < lowerBound ||
+          s.price > upperBound ||
+          (medianPrice > 5 && s.price > 3.0 * medianPrice);
 
-    // Raw Arithmetic Average
-    const rawAvgPrice = validPrices.reduce((a: number, b: number) => a + b, 0) / validPrices.length;
+        if (isPriceOutlier) {
+          s.isOutlier = true;
+          s.outlierReason = s.price > upperBound ? "High Price Outlier" : "Low Price Outlier";
+          outliersCount++;
+        } else {
+          inlierPrices.push(s.price);
+        }
+      } else {
+        outliersCount++;
+      }
+    });
 
-    // Mark individual sales as outliers if price falls outside normal bounds
-    const annotatedSales = sales.map((sale: any) => ({
-      ...sale,
-      isOutlier: sale.price < lowerBound || sale.price > upperBound,
-    }));
+    if (inlierPrices.length === 0) {
+      inlierPrices = validPrices;
+    }
+
+    const estMarketValue = inlierPrices.reduce((a, b) => a + b, 0) / inlierPrices.length;
+    const rawAvgPrice = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
 
     return NextResponse.json({
       totalFound: sales.length,
@@ -166,10 +196,10 @@ export async function POST(req: Request) {
       averagePrice: parseFloat(rawAvgPrice.toFixed(2)),
       minPrice: validPrices[0] || 0,
       maxPrice: validPrices[validPrices.length - 1] || 0,
-      filteredMinPrice: filteredPrices[0] || validPrices[0] || 0,
-      filteredMaxPrice: filteredPrices[filteredPrices.length - 1] || validPrices[validPrices.length - 1] || 0,
+      filteredMinPrice: inlierPrices[0] || validPrices[0] || 0,
+      filteredMaxPrice: inlierPrices[inlierPrices.length - 1] || validPrices[validPrices.length - 1] || 0,
       outlierCount: outliersCount,
-      recentSales: annotatedSales,
+      recentSales: sales,
     });
   } catch (error: any) {
     console.error("=== EBAY COMPS API ERROR ===");

@@ -37,6 +37,7 @@ interface EbaySaleItem {
   imageUrl: string;
   itemWebUrl: string;
   isOutlier?: boolean;
+  outlierReason?: string;
 }
 
 interface EbayCompsResult {
@@ -164,16 +165,26 @@ export function CardDetailsModal({
     setCompsError(null);
 
     try {
-      const res = await fetch("/api/comps", {
+      let res = await fetch("/api/comps", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: queryToUse }),
       });
 
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch (pErr) {
+        res = await fetch("https://card-id-app.web.app/api/comps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: queryToUse }),
+        });
+        data = await res.json();
+      }
 
-      if (!res.ok || data.error) {
-        setCompsError(data.error || "Failed to fetch eBay sales comps.");
+      if (!res.ok || !data || data.error) {
+        setCompsError(data?.error || "Failed to fetch eBay sales comps.");
         setCompsResult(null);
       } else {
         setCompsResult(data);
@@ -777,8 +788,11 @@ export function CardDetailsModal({
                                 {sale.title}
                               </h5>
                               {sale.isOutlier && (
-                                <span className="rounded bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.2 text-[9px] font-mono font-bold text-amber-300">
-                                  Outlier
+                                <span
+                                  className="rounded bg-amber-500/20 border border-amber-500/40 px-1.5 py-0.5 text-[9px] font-mono font-bold text-amber-300"
+                                  title={sale.outlierReason || "Outlier Excluded"}
+                                >
+                                  ⚡ Excluded ({sale.outlierReason || "Price Outlier"})
                                 </span>
                               )}
                             </div>

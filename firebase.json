@@ -18,6 +18,13 @@
         }
       },
       {
+        "source": "/api/comps",
+        "function": {
+          "functionId": "getEbayComps",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
