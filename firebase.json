@@ -6,10 +6,11 @@
     "providers": {
       "emailPassword": true,
       "googleSignIn": {
+        "oAuthBrandDisplayName": "CardID Pro",
         "authorizedRedirectUris": [
           "https://card-id-app.web.app",
           "https://card-id-app.firebaseapp.com",
-          "http://localhost"
+          "localhost"
         ]
       }
     }
