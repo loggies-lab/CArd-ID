@@ -267,11 +267,13 @@ export const getEbayComps = onRequest(
 
       // Statistical Outlier Elimination (IQR + Median Multiplier)
       const medianPrice = getPercentile(validPrices, 0.5);
+      const minPrice = validPrices[0] || 0;
+      const maxRawCap = minPrice <= 5.0 ? Math.max(10.0, minPrice * 4.0) : Math.max(25.0, medianPrice * 2.5);
+
       const q1 = getPercentile(validPrices, 0.25);
       const q3 = getPercentile(validPrices, 0.75);
       const iqr = q3 - q1;
       const lowerBound = Math.max(0.5, q1 - 1.5 * iqr);
-      const upperBound = q3 + 1.5 * iqr;
 
       let inlierPrices: number[] = [];
       let outliersCount = 0;
@@ -280,12 +282,11 @@ export const getEbayComps = onRequest(
         if (!s.isOutlier) {
           const isPriceOutlier =
             s.price < lowerBound ||
-            s.price > upperBound ||
-            (medianPrice > 5 && s.price > 3.0 * medianPrice);
+            s.price > maxRawCap;
 
           if (isPriceOutlier) {
             s.isOutlier = true;
-            s.outlierReason = s.price > upperBound ? "High Price Outlier" : "Low Price Outlier";
+            s.outlierReason = s.price > maxRawCap ? "Unrealistic Active Asking Price (Overpriced)" : "Low Price Outlier";
             outliersCount++;
           } else {
             inlierPrices.push(s.price);
@@ -295,12 +296,13 @@ export const getEbayComps = onRequest(
         }
       });
 
-      if (inlierPrices.length === 0) {
-        inlierPrices = validPrices;
+      if (inlierPrices.length === 0 && validPrices.length > 0) {
+        inlierPrices = [validPrices[0]];
       }
 
-      const estMarketValue = inlierPrices.reduce((a, b) => a + b, 0) / inlierPrices.length;
-      const rawAvgPrice = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
+      inlierPrices.sort((a, b) => a - b);
+      const estMarketValue = getPercentile(inlierPrices, 0.5);
+      const rawAvgPrice = inlierPrices.reduce((a, b) => a + b, 0) / inlierPrices.length;
 
       const reqBodyData = req.body || {};
       const includeGraded = reqBodyData.includeGraded || req.query?.includeGraded || false;
@@ -340,7 +342,7 @@ export const getEbayComps = onRequest(
 
             if (valid10Prices.length > 0) {
               const median10 = getPercentile(valid10Prices, 0.5);
-              if (median10 >= rawVal * 3 && median10 <= rawVal * 30) {
+              if (median10 >= rawVal * 2.0 && median10 <= Math.max(100, rawVal * 70)) {
                 psa10Value = parseFloat(median10.toFixed(2));
               }
             }
@@ -366,20 +368,20 @@ export const getEbayComps = onRequest(
 
             if (valid9Prices.length > 0) {
               const median9 = getPercentile(valid9Prices, 0.5);
-              if (median9 >= rawVal * 1.2 && median9 <= rawVal * 10) {
+              if (median9 >= rawVal * 1.1 && median9 <= Math.max(50, rawVal * 25)) {
                 psa9Value = parseFloat(median9.toFixed(2));
               }
             }
           }
 
-          // 3. Fallback Multipliers (11.72x for PSA 10 = ~$79, 3.41x for PSA 9 = ~$23)
+          // 3. Fallback Multipliers aligned with PSA Market Price Guide
           if (!psa10Value) {
-            const psa10Multiplier = gradingCompany === "PSA" ? 11.72 : (gradingCompany === "BGS" ? 7.5 : 8.2);
+            const psa10Multiplier = rawVal <= 3.0 ? 45.0 : (gradingCompany === "PSA" ? 11.72 : 8.2);
             psa10Value = parseFloat((rawVal * psa10Multiplier).toFixed(2));
           }
 
           if (!psa9Value) {
-            const psa9Multiplier = gradingCompany === "PSA" ? 3.41 : (gradingCompany === "BGS" ? 2.8 : 3.0);
+            const psa9Multiplier = rawVal <= 3.0 ? 12.0 : (gradingCompany === "PSA" ? 3.41 : 2.8);
             psa9Value = parseFloat((rawVal * psa9Multiplier).toFixed(2));
           }
 
