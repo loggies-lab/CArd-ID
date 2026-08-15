@@ -2,6 +2,18 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "authorizedRedirectUris": [
+          "https://card-id-app.web.app",
+          "https://card-id-app.firebaseapp.com",
+          "http://localhost"
+        ]
+      }
+    }
+  },
   "hosting": {
     "public": "out",
     "ignore": [

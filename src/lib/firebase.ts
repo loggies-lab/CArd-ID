@@ -1,4 +1,5 @@
 import { initializeApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
 
@@ -15,8 +16,9 @@ const firebaseConfig = {
 // Initialize Firebase App singleton
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Cloud Firestore Database & Cloud Functions
+// Initialize Auth, Cloud Firestore Database & Cloud Functions
+const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app);
 
-export { app, db, functions };
+export { app, auth, db, functions };

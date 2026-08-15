@@ -14,6 +14,9 @@ import { identifyCardClientSide } from "@/lib/geminiClient";
 import { CardItem, SavedCollectionItem, CDPCardSchema, UserGradingSettings } from "@/types/card";
 import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award } from "lucide-react";
 
+import { AuthProvider } from "@/context/AuthContext";
+import { AuthModal } from "@/components/AuthModal";
+
 const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
   minRawThreshold: 30.0,
   targetCompany: "PSA",
@@ -21,7 +24,7 @@ const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
   autoFlagCandidates: true,
 };
 
-export default function Home() {
+function CardIdApp() {
   const [activeTab, setActiveTab] = useState<"scanner" | "collection" | "grading">("scanner");
   const [items, setItems] = useState<CardItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -31,6 +34,7 @@ export default function Home() {
 
   const [gradingSettings, setGradingSettings] = useState<UserGradingSettings>(DEFAULT_GRADING_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   // Load saved API Key & Grading Settings from localStorage on mount
   useEffect(() => {
@@ -281,6 +285,7 @@ export default function Home() {
         savedCount={savedCards.length}
         candidateCount={candidateCount}
         onOpenGradingSettings={() => setIsSettingsOpen(true)}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 space-y-8">
@@ -406,7 +411,20 @@ export default function Home() {
           settings={gradingSettings}
           onSaveSettings={saveGradingSettings}
         />
+
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+        />
       </main>
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <AuthProvider>
+      <CardIdApp />
+    </AuthProvider>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { db } from "@/lib/firebase";
+import { useAuth } from "@/context/AuthContext";
 import {
   collection,
   doc,
@@ -13,11 +14,10 @@ import {
   onSnapshot,
 } from "firebase/firestore";
 
-const LOCAL_STORAGE_KEY = "card_id_online_collection_v1";
+const LOCAL_STORAGE_KEY_PREFIX = "card_id_collection_v1_";
 
 /**
  * Converts blob: URLs or File instances to permanent compact base64 Data URLs
- * to ensure preview thumbnails remain lightweight.
  */
 async function ensureDataUrl(preview?: string, file?: File | null): Promise<string | undefined> {
   if (!preview) return undefined;
@@ -61,56 +61,63 @@ async function ensureDataUrl(preview?: string, file?: File | null): Promise<stri
 }
 
 export function useCollection() {
+  const { currentUser } = useAuth();
+  const uid = currentUser?.uid;
+
+  const storageKey = uid ? `${LOCAL_STORAGE_KEY_PREFIX}${uid}` : `${LOCAL_STORAGE_KEY_PREFIX}guest`;
+
   const [savedCards, setSavedCards] = useState<SavedCollectionItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. Real-time Cloud Firestore Listener & Sync + localStorage Fallback
+  // Real-time Cloud Firestore Listener for /users/{uid}/cards
   useEffect(() => {
     let unsubscribeFirestore: (() => void) | null = null;
+    setIsLoaded(false);
 
-    try {
-      // Connect real-time Firestore listener to collection/
-      const colRef = collection(db, "collection");
-      unsubscribeFirestore = onSnapshot(
-        colRef,
-        (snapshot) => {
-          const cloudCards: SavedCollectionItem[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as SavedCollectionItem;
-            cloudCards.push({
-              ...data,
-              id: docSnap.id,
+    if (uid) {
+      try {
+        const userCardsRef = collection(db, "users", uid, "cards");
+        unsubscribeFirestore = onSnapshot(
+          userCardsRef,
+          (snapshot) => {
+            const cloudCards: SavedCollectionItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data() as SavedCollectionItem;
+              cloudCards.push({
+                ...data,
+                id: docSnap.id,
+              });
             });
-          });
 
-          // Sort by dateAdded descending
-          cloudCards.sort(
-            (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
-          );
+            cloudCards.sort(
+              (a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+            );
 
-          setSavedCards(cloudCards);
-          setIsLoaded(true);
+            setSavedCards(cloudCards);
+            setIsLoaded(true);
 
-          // Update local cache
-          try {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cloudCards));
-          } catch (e) {
-            // Ignore quota errors on cache update since Firestore is the primary cloud source
+            try {
+              localStorage.setItem(storageKey, JSON.stringify(cloudCards));
+            } catch (e) {
+              // Ignore quota error
+            }
+          },
+          (error) => {
+            console.warn("User collection Firestore listener error, loading local cache:", error);
+            loadFromLocalStorage();
           }
-        },
-        (error) => {
-          console.warn("Firestore listener error, falling back to local storage cache:", error);
-          loadFromLocalStorage();
-        }
-      );
-    } catch (err) {
-      console.warn("Firestore initialization error, falling back to local storage:", err);
+        );
+      } catch (err) {
+        console.warn("Firestore initialization error, loading local cache:", err);
+        loadFromLocalStorage();
+      }
+    } else {
       loadFromLocalStorage();
     }
 
     function loadFromLocalStorage() {
       try {
-        const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+        const stored = localStorage.getItem(storageKey);
         if (stored) {
           const parsed: SavedCollectionItem[] = JSON.parse(stored);
           const sanitized = parsed.map((item) => ({
@@ -119,9 +126,12 @@ export function useCollection() {
             backPreview: item.backPreview?.startsWith("blob:") ? undefined : item.backPreview,
           }));
           setSavedCards(sanitized);
+        } else {
+          setSavedCards([]);
         }
       } catch (e) {
-        console.error("Failed to load local storage collection fallback:", e);
+        console.error("Failed to load local storage collection:", e);
+        setSavedCards([]);
       } finally {
         setIsLoaded(true);
       }
@@ -130,24 +140,21 @@ export function useCollection() {
     return () => {
       if (unsubscribeFirestore) unsubscribeFirestore();
     };
-  }, []);
+  }, [uid, storageKey]);
 
-  // Sync to Cloud Firestore + Local Cache
-  const saveCardToCloudAndLocal = async (items: SavedCollectionItem[]) => {
+  // Sync state to local cache
+  const updateLocalCache = (items: SavedCollectionItem[]) => {
     setSavedCards(items);
-
-    // 1. Save to Local Storage Cache
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(items));
+      localStorage.setItem(storageKey, JSON.stringify(items));
     } catch (e) {
-      // Quota exceeded fallback for local cache
       try {
         const lightweight = items.map((item, idx) =>
           idx < items.length - 15 ? { ...item, frontPreview: undefined, backPreview: undefined } : item
         );
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(lightweight));
+        localStorage.setItem(storageKey, JSON.stringify(lightweight));
       } catch (err2) {
-        // Ignore local cache error since Cloud Firestore persists all data
+        // Ignore local cache error
       }
     }
   };
@@ -168,15 +175,16 @@ export function useCollection() {
       data: item.data,
     };
 
-    // Save to Cloud Firestore
-    try {
-      await setDoc(doc(db, "collection", newItem.id), newItem);
-    } catch (e) {
-      console.error("Failed to save card to Cloud Firestore:", e);
+    if (uid) {
+      try {
+        await setDoc(doc(db, "users", uid, "cards", newItem.id), newItem);
+      } catch (e) {
+        console.error("Failed to save card to user Firestore collection:", e);
+      }
     }
 
     const updated = [newItem, ...savedCards];
-    await saveCardToCloudAndLocal(updated);
+    updateLocalCache(updated);
     return true;
   };
 
@@ -200,45 +208,50 @@ export function useCollection() {
       })
     );
 
-    // Save batch to Cloud Firestore using WriteBatch
-    try {
-      const batch = writeBatch(db);
-      newSavedItems.forEach((savedItem) => {
-        batch.set(doc(db, "collection", savedItem.id), savedItem);
-      });
-      await batch.commit();
-    } catch (e) {
-      console.error("Failed to save batch to Cloud Firestore:", e);
+    if (uid) {
+      try {
+        const batch = writeBatch(db);
+        newSavedItems.forEach((savedItem) => {
+          batch.set(doc(db, "users", uid, "cards", savedItem.id), savedItem);
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error("Failed to save card batch to user Firestore collection:", e);
+      }
     }
 
     const updated = [...newSavedItems, ...savedCards];
-    await saveCardToCloudAndLocal(updated);
+    updateLocalCache(updated);
     return newSavedItems.length;
   };
 
   const removeCard = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, "collection", id));
-    } catch (e) {
-      console.error("Failed to delete card from Cloud Firestore:", e);
+    if (uid) {
+      try {
+        await deleteDoc(doc(db, "users", uid, "cards", id));
+      } catch (e) {
+        console.error("Failed to delete card from user Firestore collection:", e);
+      }
     }
 
     const updated = savedCards.filter((c) => c.id !== id);
-    await saveCardToCloudAndLocal(updated);
+    updateLocalCache(updated);
   };
 
   const clearCollection = async () => {
-    try {
-      const batch = writeBatch(db);
-      savedCards.forEach((c) => {
-        batch.delete(doc(db, "collection", c.id));
-      });
-      await batch.commit();
-    } catch (e) {
-      console.error("Failed to clear Cloud Firestore collection:", e);
+    if (uid) {
+      try {
+        const batch = writeBatch(db);
+        savedCards.forEach((c) => {
+          batch.delete(doc(db, "users", uid, "cards", c.id));
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error("Failed to clear user Firestore collection:", e);
+      }
     }
 
-    await saveCardToCloudAndLocal([]);
+    updateLocalCache([]);
   };
 
   const updateSavedCardData = async (id: string, data: CDPCardSchema) => {
@@ -247,14 +260,16 @@ export function useCollection() {
 
     const updatedItem = { ...target, data };
 
-    try {
-      await setDoc(doc(db, "collection", id), updatedItem);
-    } catch (e) {
-      console.error("Failed to update card in Cloud Firestore:", e);
+    if (uid) {
+      try {
+        await setDoc(doc(db, "users", uid, "cards", id), updatedItem);
+      } catch (e) {
+        console.error("Failed to update card in user Firestore collection:", e);
+      }
     }
 
     const updated = savedCards.map((c) => (c.id === id ? updatedItem : c));
-    await saveCardToCloudAndLocal(updated);
+    updateLocalCache(updated);
   };
 
   const updateSavedCardDataBatch = async (updates: { id: string; data: CDPCardSchema }[]) => {
@@ -265,20 +280,22 @@ export function useCollection() {
       return newData ? { ...c, data: newData } : c;
     });
 
-    try {
-      const batch = writeBatch(db);
-      updates.forEach(({ id, data }) => {
-        const existing = savedCards.find((c) => c.id === id);
-        if (existing) {
-          batch.set(doc(db, "collection", id), { ...existing, data });
-        }
-      });
-      await batch.commit();
-    } catch (e) {
-      console.error("Failed to update batch in Cloud Firestore:", e);
+    if (uid) {
+      try {
+        const batch = writeBatch(db);
+        updates.forEach(({ id, data }) => {
+          const existing = savedCards.find((c) => c.id === id);
+          if (existing) {
+            batch.set(doc(db, "users", uid, "cards", id), { ...existing, data });
+          }
+        });
+        await batch.commit();
+      } catch (e) {
+        console.error("Failed to update batch in user Firestore collection:", e);
+      }
     }
 
-    await saveCardToCloudAndLocal(updated);
+    updateLocalCache(updated);
   };
 
   const isSaved = (id: string) => {
