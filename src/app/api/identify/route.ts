@@ -25,11 +25,16 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { frontBase64, backBase64 } = body;
+    const rawData = body?.data || body || {};
+    let frontBase64 = rawData.frontBase64;
+    let backBase64 = rawData.backBase64;
+
+    if (frontBase64 && !backBase64) backBase64 = frontBase64;
+    if (backBase64 && !frontBase64) frontBase64 = backBase64;
 
     if (!frontBase64 || !backBase64) {
       return NextResponse.json(
-        { error: "Both frontBase64 and backBase64 image strings are required." },
+        { error: "At least one valid image (front or back) is required for card identification." },
         { status: 400, headers: corsHeaders }
       );
     }

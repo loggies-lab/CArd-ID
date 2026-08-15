@@ -19,21 +19,35 @@ function getPercentile(arr, q) {
     }
     return sorted[base];
 }
-exports.identifyCard = (0, https_1.onCall)({ cors: true, secrets: [geminiApiKey] }, async (request) => {
-    const { frontBase64, backBase64, apiKeyOverride } = request.data || {};
-    const apiKey = apiKeyOverride ||
-        geminiApiKey.value() ||
-        process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-        throw new https_1.HttpsError("failed-precondition", "GEMINI_API_KEY is missing on server environment variables.");
+exports.identifyCard = (0, https_1.onRequest)({ cors: true, secrets: [geminiApiKey] }, async (req, res) => {
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+        res.status(204).send("");
+        return;
     }
-    if (!frontBase64 || !backBase64) {
-        throw new https_1.HttpsError("invalid-argument", "Both frontBase64 and backBase64 image strings are required.");
-    }
-    const cleanBase64 = (str) => str.replace(/^data:image\/\w+;base64,/, "");
-    const frontClean = cleanBase64(frontBase64);
-    const backClean = cleanBase64(backBase64);
     try {
+        const body = req.body?.data || req.body || {};
+        const frontBase64 = body.frontBase64;
+        const backBase64 = body.backBase64;
+        const apiKeyOverride = body.apiKeyOverride;
+        const apiKey = apiKeyOverride ||
+            geminiApiKey.value() ||
+            process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+            res.status(500).json({ error: "GEMINI_API_KEY is missing on server environment variables." });
+            return;
+        }
+        let front = frontBase64 || backBase64;
+        let back = backBase64 || frontBase64;
+        if (!front || !back) {
+            res.status(400).json({ error: "At least one valid image (front or back) is required for card identification." });
+            return;
+        }
+        const cleanBase64 = (str) => str.replace(/^data:image\/\w+;base64,/, "");
+        const frontClean = cleanBase64(front);
+        const backClean = cleanBase64(back);
         const ai = new genai_1.GoogleGenAI({ apiKey });
         const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
 Identify the trading card from these front and back images with 100% precision.
@@ -64,7 +78,7 @@ Return ONLY a valid JSON object matching this schema:
         const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
         for (const modelName of modelsToTry) {
             try {
-                const res = await ai.models.generateContent({
+                const resModel = await ai.models.generateContent({
                     model: modelName,
                     contents: [
                         { text: promptText },
@@ -75,8 +89,8 @@ Return ONLY a valid JSON object matching this schema:
                         responseMimeType: "application/json",
                     },
                 });
-                if (res.text) {
-                    responseText = res.text;
+                if (resModel.text) {
+                    responseText = resModel.text;
                     break;
                 }
             }
@@ -89,7 +103,8 @@ Return ONLY a valid JSON object matching this schema:
             }
         }
         if (!responseText) {
-            throw new https_1.HttpsError("internal", primaryError || "Gemini Vision AI processing failed.");
+            res.status(500).json({ error: primaryError || "Gemini Vision AI processing failed." });
+            return;
         }
         let parsed = JSON.parse(responseText);
         const player = parsed.playerName || parsed.subject || parsed.player || "";
@@ -101,11 +116,11 @@ Return ONLY a valid JSON object matching this schema:
         if (parsed.cardNumber) {
             parsed.cardNumber = String(parsed.cardNumber).replace(/#/g, "").trim();
         }
-        return parsed;
+        res.json({ result: parsed, ...parsed });
     }
     catch (err) {
         console.error("identifyCard Cloud Function error:", err);
-        throw new https_1.HttpsError("internal", err.message || "Failed to identify card with Gemini Vision AI.");
+        res.status(500).json({ error: err.message || "Failed to identify card with Gemini Vision AI." });
     }
 });
 exports.getEbayComps = (0, https_1.onRequest)({ cors: true, secrets: [ebayClientId, ebayClientSecret] }, async (req, res) => {

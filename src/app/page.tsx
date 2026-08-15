@@ -110,7 +110,15 @@ export default function Home() {
         backBase64 = await compressBase64DataUrl(item.backPreview, 800, 0.75);
       }
 
-      if (apiKey && frontBase64 && backBase64) {
+      // If one image is missing (e.g. single-sided upload), fallback to the available image
+      if (frontBase64 && !backBase64) backBase64 = frontBase64;
+      if (backBase64 && !frontBase64) frontBase64 = backBase64;
+
+      if (!frontBase64 || !backBase64) {
+        throw new Error("No valid image preview found for this card scan.");
+      }
+
+      if (apiKey) {
         try {
           const cardData = await identifyCardClientSide(frontBase64, backBase64, apiKey);
           return {
@@ -126,15 +134,30 @@ export default function Home() {
         }
       }
 
-      const res = await fetch("/identifyCard", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const reqBody = {
+        frontBase64,
+        backBase64,
+        apiKeyOverride: apiKey || undefined,
+        data: {
           frontBase64,
           backBase64,
           apiKeyOverride: apiKey || undefined,
-        }),
+        },
+      };
+
+      let res = await fetch("/identifyCard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reqBody),
       });
+
+      if (!res.ok) {
+        res = await fetch("/api/identify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(reqBody),
+        });
+      }
 
       let json: any = null;
       try {
