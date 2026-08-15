@@ -313,7 +313,7 @@ function CardIdApp() {
           <div className="relative z-10 max-w-2xl space-y-3">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-mono font-bold text-cyan-300">
-                <Sparkles className="h-3.5 w-3.5" /> Card Dealer Pro (CDP) Standard Engine
+                <Sparkles className="h-3.5 w-3.5" /> CardID AI Vision Engine v2.0
               </span>
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300">
                 <Award className="h-3.5 w-3.5 text-amber-400" /> {gradingSettings.targetCompany} Grading ROI Rules Engine
@@ -328,10 +328,10 @@ function CardIdApp() {
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
               {activeTab === "scanner"
-                ? "Batch upload trading card front and back scans. Our vision pipeline extracts player names, manufacturer brands, set releases, card numbers, parallel finishes, and rookie/auto flags with 100% CDP schema compliance."
+                ? "Batch upload trading card front and back scans. Our vision pipeline extracts player names, manufacturer brands, set releases, card numbers, parallel finishes, and rookie/auto flags with automated metadata extraction & eBay market comps."
                 : activeTab === "collection"
-                ? "View, filter, search, and manage your persistent online collection of identified trading cards. Export your portfolio to CDP CSV at any time."
-                : `Inspect high-value trading cards worth sending for ${gradingSettings.targetCompany} grading based on estimated raw market values (\ge \$${gradingSettings.minRawThreshold.toFixed(2)}) and graded market sales comps.`}
+                ? "View, filter, search, and manage your persistent online collection of identified trading cards. Export your portfolio to CSV at any time."
+                : `Inspect high-value trading cards worth sending for ${gradingSettings.targetCompany} grading based on estimated raw market values (≥ \$${gradingSettings.minRawThreshold.toFixed(2)}) and graded market sales comps.`}
             </p>
           </div>
         </div>
