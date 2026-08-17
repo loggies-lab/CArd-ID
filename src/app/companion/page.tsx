@@ -88,7 +88,20 @@ function MobileCompanionContent() {
       const generated = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       setSessionId(generated);
     }
-  }, [sessionId]);
+
+    // Auto-launch phone camera 350ms after landing on companion page
+    const timer = setTimeout(() => {
+      if (!frontPreview && frontInputRef.current) {
+        try {
+          frontInputRef.current.click();
+        } catch (e) {
+          // Ignore gesture policy if blocked by browser
+        }
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [sessionId, frontPreview]);
 
   const handleCaptureFront = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
