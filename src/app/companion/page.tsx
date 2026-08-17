@@ -169,20 +169,21 @@ function MobileCompanionContent() {
         console.warn("Fast fallback to direct Firestore Data URL payload:", storageErr);
       }
 
-      // 2. Sync session document to Firestore /users/{uid}/scanSessions/{sessionId}
-      await setDoc(
-        doc(db, "users", uid, "scanSessions", sessionId),
-        {
-          sessionId,
-          uid,
-          status: "ready_to_identify",
-          frontUrl: finalFrontUrl,
-          backUrl: finalBackUrl,
-          prefix: cardPrefix || `MOBILE-${sessionId.substring(0, 6).toUpperCase()}`,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
+      // 2. Sync session document to Firestore /scanSessions/{sessionId}
+      const sessionPayload = {
+        sessionId,
+        uid,
+        status: "ready_to_identify",
+        frontUrl: finalFrontUrl,
+        backUrl: finalBackUrl,
+        prefix: cardPrefix || `MOBILE-${sessionId.substring(0, 6).toUpperCase()}`,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await setDoc(doc(db, "scanSessions", sessionId), sessionPayload, { merge: true });
+      if (uid && uid !== "guest_user") {
+        await setDoc(doc(db, "users", uid, "scanSessions", sessionId), sessionPayload, { merge: true }).catch(() => {});
+      }
 
       setUploadSuccess(true);
     } catch (err: any) {

@@ -33,13 +33,18 @@ export function QrScannerModal({ isOpen, onClose, onCardReceived }: QrScannerMod
     setSessionStatus("waiting");
     setReceivedCardTitle(null);
 
+    const sessionPayload = {
+      sessionId: newSessionId,
+      uid,
+      status: "waiting",
+      createdAt: new Date().toISOString(),
+    };
+
     try {
-      await setDoc(doc(db, "users", uid, "scanSessions", newSessionId), {
-        sessionId: newSessionId,
-        uid,
-        status: "waiting",
-        createdAt: new Date().toISOString(),
-      });
+      await setDoc(doc(db, "scanSessions", newSessionId), sessionPayload);
+      if (uid && uid !== "guest_user") {
+        await setDoc(doc(db, "users", uid, "scanSessions", newSessionId), sessionPayload).catch(() => {});
+      }
     } catch (e) {
       console.warn("Firestore scanSession init notice:", e);
     }
@@ -51,13 +56,13 @@ export function QrScannerModal({ isOpen, onClose, onCardReceived }: QrScannerMod
     }
   }, [isOpen]);
 
-  // Real-time Firestore snapshot listener on /users/{uid}/scanSessions/{sessionId}
+  // Real-time Firestore snapshot listener on /scanSessions/{sessionId}
   useEffect(() => {
     if (!isOpen || !sessionId) return;
 
     let unsubscribe: (() => void) | null = null;
     try {
-      const sessionDocRef = doc(db, "users", uid, "scanSessions", sessionId);
+      const sessionDocRef = doc(db, "scanSessions", sessionId);
       unsubscribe = onSnapshot(sessionDocRef, (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();

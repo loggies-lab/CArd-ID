@@ -1,6 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Top-level Mobile QR Scan Sessions
+    match /scanSessions/{sessionId} {
+      allow read, write: if true;
+    }
+
     // User Profile Document and Isolated Subcollections
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -11,6 +16,10 @@ service cloud.firestore {
 
       match /batches/{batchId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /scanSessions/{sessionId} {
+        allow read, write: if true;
       }
     }
   }
