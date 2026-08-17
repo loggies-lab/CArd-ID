@@ -19,6 +19,8 @@ import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award, Tag, Smar
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
 import { LandingAuthView } from "@/components/LandingAuthView";
+import { db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 
 const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
   minRawThreshold: 30.0,
@@ -292,6 +294,54 @@ function CardIdApp() {
       prev.map((i) => (i.id === cardId ? updated : i))
     );
   };
+
+  // Real-time Firestore Listener for Mobile Camera Scans
+  useEffect(() => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+
+    try {
+      const q = query(
+        collection(db, "scanSessions"),
+        where("uid", "==", uid),
+        where("status", "==", "ready_to_identify")
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added" || change.type === "modified") {
+            const data = change.doc.data();
+            if (data.status === "ready_to_identify" && data.frontUrl) {
+              const cardId = `card-phone-${data.sessionId || Date.now()}`;
+              
+              setItems((prev) => {
+                if (prev.some((c) => c.id === cardId)) return prev;
+
+                const newCard: CardItem = {
+                  id: cardId,
+                  prefix: data.prefix || `MOBILE-${(data.sessionId || "").substring(0, 6).toUpperCase()}`,
+                  batchId: `batch_mobile_${new Date().toISOString().slice(0, 10)}`,
+                  batchName: `Mobile Scanner Batch (${new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" })})`,
+                  frontFile: null,
+                  backFile: null,
+                  frontPreview: data.frontUrl,
+                  backPreview: data.backUrl || data.frontUrl,
+                  isUnpaired: false,
+                  status: "idle",
+                };
+
+                return [newCard, ...prev];
+              });
+            }
+          }
+        });
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn("Global scanSession listener warning:", e);
+    }
+  }, [currentUser]);
 
   if (loading) {
     return (
