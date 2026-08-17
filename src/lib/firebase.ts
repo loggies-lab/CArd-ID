@@ -7,6 +7,7 @@ import {
   persistentMultipleTabManager,
 } from "firebase/firestore";
 import { getFunctions } from "firebase/functions";
+import { getStorage } from "firebase/storage";
 
 // Dynamic auth domain to prevent Cross-Origin-Opener-Policy & cross-domain storage blocks
 const getDynamicAuthDomain = () => {
@@ -48,5 +49,6 @@ try {
 }
 
 const functions = getFunctions(app);
+const storage = getStorage(app);
 
-export { app, auth, db, functions };
+export { app, auth, db, functions, storage };

@@ -8,12 +8,13 @@ import { CollectionTab } from "@/components/CollectionTab";
 import { EbayCandidatesTab } from "@/components/EbayCandidatesTab";
 import { GradingCandidatesTab } from "@/components/GradingCandidatesTab";
 import { GradingSettingsModal } from "@/components/GradingSettingsModal";
+import { QrScannerModal } from "@/components/QrScannerModal";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { identifyCardClientSide } from "@/lib/geminiClient";
 import { CardItem, SavedCollectionItem, CDPCardSchema, UserGradingSettings } from "@/types/card";
-import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award, Tag } from "lucide-react";
+import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award, Tag, Smartphone } from "lucide-react";
 
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
@@ -39,6 +40,7 @@ function CardIdApp() {
   const [gradingSettings, setGradingSettings] = useState<UserGradingSettings>(DEFAULT_GRADING_SETTINGS);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   // Load saved API Key & Grading Settings from localStorage on mount
   useEffect(() => {
@@ -102,6 +104,15 @@ function CardIdApp() {
       prev.map((item) => (item.id === cardId ? { ...item, data: updatedData } : item))
     );
     updateSavedCardData(cardId, updatedData);
+  };
+
+  // Automatically process mobile card received live from QR Companion Scanner
+  const handleMobileCardReceived = (newCard: CardItem) => {
+    setItems((prev) => [newCard, ...prev]);
+    setActiveTab("scanner");
+    processSingleCard(newCard).then((result) => {
+      setItems((prev) => prev.map((item) => (item.id === newCard.id ? result : item)));
+    });
   };
 
   const processSingleCard = async (item: CardItem): Promise<CardItem> => {
@@ -308,6 +319,7 @@ function CardIdApp() {
         candidateCount={candidateCount}
         ebayCandidateCount={ebayCandidateCount}
         onOpenGradingSettings={() => setIsSettingsOpen(true)}
+        onOpenQrScanner={() => setIsQrModalOpen(true)}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
@@ -451,6 +463,12 @@ function CardIdApp() {
           onClose={() => setIsSettingsOpen(false)}
           settings={gradingSettings}
           onSaveSettings={saveGradingSettings}
+        />
+
+        <QrScannerModal
+          isOpen={isQrModalOpen}
+          onClose={() => setIsQrModalOpen(false)}
+          onCardReceived={handleMobileCardReceived}
         />
 
         <AuthModal

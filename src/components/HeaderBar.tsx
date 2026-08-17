@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Tag, Sliders, X, LogOut } from "lucide-react";
+import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Tag, Sliders, X, LogOut, Smartphone } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface HeaderBarProps {
@@ -14,6 +14,7 @@ interface HeaderBarProps {
   candidateCount?: number;
   ebayCandidateCount?: number;
   onOpenGradingSettings?: () => void;
+  onOpenQrScanner?: () => void;
   onOpenAuthModal?: () => void;
 }
 
@@ -26,6 +27,7 @@ export function HeaderBar({
   candidateCount = 0,
   ebayCandidateCount = 0,
   onOpenGradingSettings,
+  onOpenQrScanner,
   onOpenAuthModal,
 }: HeaderBarProps) {
   const [showConfig, setShowConfig] = useState(false);
@@ -221,6 +223,16 @@ export function HeaderBar({
 
         {/* Right Section: Rules, Key Options & Profile Avatar */}
         <div className="flex items-center gap-2.5">
+          {onOpenQrScanner && (
+            <button
+              onClick={onOpenQrScanner}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 px-3 py-1.5 text-xs font-extrabold text-white shadow-md shadow-cyan-500/20 transition active:scale-95"
+              title="Launch QR Code Mobile Companion Scanner"
+            >
+              <Smartphone className="h-3.5 w-3.5" /> 📱 Scan with Phone
+            </button>
+          )}
+
           {onOpenGradingSettings && (
             <button
               onClick={onOpenGradingSettings}
