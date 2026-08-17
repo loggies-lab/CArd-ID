@@ -5,6 +5,7 @@ import { HeaderBar } from "@/components/HeaderBar";
 import { FileDropzone } from "@/components/FileDropzone";
 import { CardTable } from "@/components/CardTable";
 import { CollectionTab } from "@/components/CollectionTab";
+import { EbayCandidatesTab } from "@/components/EbayCandidatesTab";
 import { GradingCandidatesTab } from "@/components/GradingCandidatesTab";
 import { GradingSettingsModal } from "@/components/GradingSettingsModal";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
@@ -12,7 +13,7 @@ import { useCollection } from "@/lib/useCollection";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { identifyCardClientSide } from "@/lib/geminiClient";
 import { CardItem, SavedCollectionItem, CDPCardSchema, UserGradingSettings } from "@/types/card";
-import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award } from "lucide-react";
+import { Sparkles, Layers, FileSpreadsheet, BookmarkCheck, Zap, Award, Tag } from "lucide-react";
 
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { AuthModal } from "@/components/AuthModal";
@@ -28,7 +29,7 @@ const DEFAULT_GRADING_SETTINGS: UserGradingSettings = {
 function CardIdApp() {
   const { currentUser, loading } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"scanner" | "collection" | "grading">("scanner");
+  const [activeTab, setActiveTab] = useState<"scanner" | "collection" | "ebay" | "grading">("scanner");
   const [items, setItems] = useState<CardItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [apiKey, setApiKeyState] = useState("");
@@ -88,10 +89,13 @@ function CardIdApp() {
   // Compute grading candidate count matching min raw threshold
   const candidateCount = useMemo(() => {
     const thresh = gradingSettings.minRawThreshold;
-    const scannerCandidates = items.filter((i) => (i.data?.estimatedValue || 0) >= thresh).length;
-    const savedCandidates = savedCards.filter((s) => (s.data?.estimatedValue || 0) >= thresh).length;
-    return scannerCandidates + savedCandidates;
-  }, [items, savedCards, gradingSettings.minRawThreshold]);
+    return savedCards.filter((c) => (c.data.estimatedValue || 0) >= thresh).length;
+  }, [savedCards, gradingSettings.minRawThreshold]);
+
+  // Compute eBay singles candidate count (cards >= $4.00)
+  const ebayCandidateCount = useMemo(() => {
+    return savedCards.filter((c) => (c.data.estimatedValue || 0) >= 4.0).length;
+  }, [savedCards]);
 
   const handleSaveCardDetails = (cardId: string, updatedData: CDPCardSchema) => {
     setItems((prev) =>
@@ -302,6 +306,7 @@ function CardIdApp() {
         setActiveTab={setActiveTab}
         savedCount={savedCards.length}
         candidateCount={candidateCount}
+        ebayCandidateCount={ebayCandidateCount}
         onOpenGradingSettings={() => setIsSettingsOpen(true)}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
@@ -324,6 +329,8 @@ function CardIdApp() {
                 ? "AI Sports Card Identification & Cataloging"
                 : activeTab === "collection"
                 ? "My Saved Online Trading Card Collection"
+                : activeTab === "ebay"
+                ? "eBay Singles Candidates & Bulk Separation"
                 : "Grading ROI Candidates & PSA Market Comps"}
             </h2>
             <p className="text-sm text-slate-300 leading-relaxed">
@@ -331,6 +338,8 @@ function CardIdApp() {
                 ? "Batch upload trading card front and back scans. Our vision pipeline extracts player names, manufacturer brands, set releases, card numbers, parallel finishes, and rookie/auto flags with automated metadata extraction & eBay market comps."
                 : activeTab === "collection"
                 ? "View, filter, search, and manage your persistent online collection of identified trading cards. Export your portfolio to CSV at any time."
+                : activeTab === "ebay"
+                ? "Isolate cards worth $4+ for individual online sales on eBay, while pulling $1–$4 cards into a bulk box for local show sales."
                 : `Inspect high-value trading cards worth sending for ${gradingSettings.targetCompany} grading based on estimated raw market values (≥ \$${gradingSettings.minRawThreshold.toFixed(2)}) and graded market sales comps.`}
             </p>
           </div>
@@ -402,7 +411,21 @@ function CardIdApp() {
           </section>
         )}
 
-        {/* TAB 3: GRADING CANDIDATES */}
+        {/* TAB 3: EBAY SINGLES CANDIDATES ($4+) */}
+        {activeTab === "ebay" && (
+          <section className="space-y-4">
+            <EbayCandidatesTab
+              savedCards={savedCards}
+              scannerItems={items}
+              minEbayThreshold={4.0}
+              onInspectCard={(card) => setInspectingCard(card)}
+              updateSavedCardDataBatch={updateSavedCardDataBatch}
+              onNavigateToGrading={() => setActiveTab("grading")}
+            />
+          </section>
+        )}
+
+        {/* TAB 4: GRADING CANDIDATES */}
         {activeTab === "grading" && (
           <section className="space-y-4">
             <GradingCandidatesTab

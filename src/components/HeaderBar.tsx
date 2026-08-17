@@ -2,16 +2,17 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Sliders, X, LogOut } from "lucide-react";
+import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Tag, Sliders, X, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface HeaderBarProps {
   apiKey: string;
   setApiKey: (key: string) => void;
-  activeTab: "scanner" | "collection" | "grading";
-  setActiveTab: (tab: "scanner" | "collection" | "grading") => void;
+  activeTab: "scanner" | "collection" | "ebay" | "grading";
+  setActiveTab: (tab: "scanner" | "collection" | "ebay" | "grading") => void;
   savedCount: number;
   candidateCount?: number;
+  ebayCandidateCount?: number;
   onOpenGradingSettings?: () => void;
   onOpenAuthModal?: () => void;
 }
@@ -23,6 +24,7 @@ export function HeaderBar({
   setActiveTab,
   savedCount,
   candidateCount = 0,
+  ebayCandidateCount = 0,
   onOpenGradingSettings,
   onOpenAuthModal,
 }: HeaderBarProps) {
@@ -165,6 +167,29 @@ export function HeaderBar({
                   }`}
                 >
                   {savedCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveTab("ebay")}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+                activeTab === "ebay"
+                  ? "bg-gradient-to-r from-indigo-500 to-cyan-600 text-white shadow-md shadow-indigo-500/20"
+                  : "text-indigo-400 hover:text-indigo-200 hover:bg-slate-800/50"
+              }`}
+            >
+              <Tag className="h-3.5 w-3.5" />
+              <span>eBay Singles 🏷️</span>
+              {ebayCandidateCount > 0 && (
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${
+                    activeTab === "ebay"
+                      ? "bg-white/20 text-white"
+                      : "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40"
+                  }`}
+                >
+                  {ebayCandidateCount}
                 </span>
               )}
             </button>
