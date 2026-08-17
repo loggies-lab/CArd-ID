@@ -151,14 +151,25 @@ export function CardDetailsModal({
   };
 
   const handleApplyEstValue = (val: number) => {
-    handleChange("estimatedValue", val);
-    handleChange("valueLastUpdated", new Date().toISOString());
+    const updatedData: CDPCardSchema = {
+      ...formData,
+      estimatedValue: val,
+      valueLastUpdated: new Date().toISOString(),
+    };
+    setFormData(updatedData);
+
+    // Immediately persist to parent collection & Firestore database!
+    if (card && card.id) {
+      onSave(card.id, updatedData);
+    }
+
     setAppliedValueSuccess(true);
     setTimeout(() => setAppliedValueSuccess(false), 2500);
   };
 
   const handleFetchComps = async () => {
-    const queryToUse = (customCompsQuery || cdpTitle).trim();
+    const freshTitle = generateCdpTitle(formData);
+    const queryToUse = (customCompsQuery || freshTitle || cdpTitle).trim();
     if (!queryToUse) return;
 
     setIsFetchingComps(true);
