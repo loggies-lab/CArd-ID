@@ -308,6 +308,24 @@ function CardIdApp() {
     return <LandingAuthView />;
   }
 
+  const handleOpenQrScanner = () => {
+    const isMobile =
+      typeof window !== "undefined" &&
+      (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        window.innerWidth < 768);
+
+    if (isMobile) {
+      const newSessionId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const uid = currentUser?.uid || "guest_user";
+      window.location.href = `/companion?session=${newSessionId}&uid=${uid}`;
+    } else {
+      setIsQrModalOpen(true);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-cyan-500 selection:text-slate-950 font-sans">
       <HeaderBar
@@ -319,7 +337,7 @@ function CardIdApp() {
         candidateCount={candidateCount}
         ebayCandidateCount={ebayCandidateCount}
         onOpenGradingSettings={() => setIsSettingsOpen(true)}
-        onOpenQrScanner={() => setIsQrModalOpen(true)}
+        onOpenQrScanner={handleOpenQrScanner}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 

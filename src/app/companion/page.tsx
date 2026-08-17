@@ -238,6 +238,17 @@ function MobileCompanionContent() {
               </div>
             )}
 
+            {/* Big Prominent Camera Trigger Banner */}
+            {!frontPreview && (
+              <button
+                onClick={() => frontInputRef.current?.click()}
+                className="w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white font-black text-base shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-3 active:scale-95 transition ring-4 ring-cyan-500/20 animate-pulse"
+              >
+                <Camera className="h-6 w-6 text-white" />
+                <span>TAP HERE TO SNAP FRONT OF CARD</span>
+              </button>
+            )}
+
             {/* Optional Card Prefix Input */}
             <div className="space-y-1">
               <label className="text-[11px] font-mono font-bold text-slate-400 uppercase tracking-wider">
