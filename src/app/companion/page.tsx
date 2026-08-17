@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 /**
- * Resizes and compresses an image File to max 1600px width/height canvas JPEG 0.85
+ * Resizes and compresses an image File to max 800px width/height canvas JPEG 0.70 (~80KB)
  */
 async function compressMobileCapturedImage(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -29,7 +29,7 @@ async function compressMobileCapturedImage(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error("Failed to load captured image into element"));
       img.onload = () => {
-        const MAX_SIZE = 1600;
+        const MAX_SIZE = 800;
         let width = img.width;
         let height = img.height;
 
@@ -54,7 +54,7 @@ async function compressMobileCapturedImage(file: File): Promise<string> {
         }
 
         ctx.drawImage(img, 0, 0, width, height);
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.85);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.70);
         resolve(compressedBase64);
       };
       img.src = e.target?.result as string;
@@ -135,39 +135,54 @@ function MobileCompanionContent() {
 
     setIsUploading(true);
     setErrorMessage(null);
-    setUploadProgressMsg("Uploading to Firebase Storage & Syncing Desktop...");
+    setUploadProgressMsg("Syncing live card to desktop...");
 
     try {
       let finalFrontUrl = frontPreview;
       let finalBackUrl = backPreview || frontPreview;
 
-      // 1. Try Firebase Storage upload first
+      // 1. Try Firebase Storage with 1.5s fast timeout to prevent loading hangs
       try {
-        const frontStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_front.jpg`);
-        await uploadString(frontStorageRef, frontPreview, "data_url");
-        finalFrontUrl = await getDownloadURL(frontStorageRef);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Storage timeout fallback")), 1500)
+        );
+
+        const uploadFront = async () => {
+          const frontStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_front.jpg`);
+          await uploadString(frontStorageRef, frontPreview, "data_url");
+          return await getDownloadURL(frontStorageRef);
+        };
+
+        finalFrontUrl = await Promise.race([uploadFront(), timeoutPromise]);
 
         if (backPreview) {
-          const backStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_back.jpg`);
-          await uploadString(backStorageRef, backPreview, "data_url");
-          finalBackUrl = await getDownloadURL(backStorageRef);
+          const uploadBack = async () => {
+            const backStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_back.jpg`);
+            await uploadString(backStorageRef, backPreview, "data_url");
+            return await getDownloadURL(backStorageRef);
+          };
+          finalBackUrl = await Promise.race([uploadBack(), timeoutPromise]);
         } else {
           finalBackUrl = finalFrontUrl;
         }
       } catch (storageErr) {
-        console.warn("Storage upload fallback to direct Firestore payload:", storageErr);
+        console.warn("Fast fallback to direct Firestore Data URL payload:", storageErr);
       }
 
       // 2. Sync session document to Firestore /users/{uid}/scanSessions/{sessionId}
-      await setDoc(doc(db, "users", uid, "scanSessions", sessionId), {
-        sessionId,
-        uid,
-        status: "ready_to_identify",
-        frontUrl: finalFrontUrl,
-        backUrl: finalBackUrl,
-        prefix: cardPrefix || `MOBILE-${sessionId.substring(0, 6).toUpperCase()}`,
-        updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      await setDoc(
+        doc(db, "users", uid, "scanSessions", sessionId),
+        {
+          sessionId,
+          uid,
+          status: "ready_to_identify",
+          frontUrl: finalFrontUrl,
+          backUrl: finalBackUrl,
+          prefix: cardPrefix || `MOBILE-${sessionId.substring(0, 6).toUpperCase()}`,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
 
       setUploadSuccess(true);
     } catch (err: any) {
