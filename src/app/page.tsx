@@ -498,7 +498,21 @@ function CardIdApp() {
   );
 }
 
+import MobileCompanionPage from "./companion/page";
+
 export default function Home() {
+  const [isCompanionRoute, setIsCompanionRoute] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.pathname.includes("/companion")) {
+      setIsCompanionRoute(true);
+    }
+  }, []);
+
+  if (isCompanionRoute) {
+    return <MobileCompanionPage />;
+  }
+
   return (
     <AuthProvider>
       <CardIdApp />

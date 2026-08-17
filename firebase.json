@@ -17,6 +17,7 @@
   },
   "hosting": {
     "public": "out",
+    "cleanUrls": true,
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -36,6 +37,10 @@
           "functionId": "getEbayComps",
           "region": "us-central1"
         }
+      },
+      {
+        "source": "/companion**",
+        "destination": "/companion.html"
       },
       {
         "source": "**",
