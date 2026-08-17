@@ -76,34 +76,37 @@ export function CardTable({
 
   return (
     <div className="space-y-4">
-      {/* Header & Export Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-md">
+      {/* Header & Staging Batch Approval Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-cyan-500/30 bg-gradient-to-r from-slate-900 via-indigo-950/30 to-slate-900 p-5 backdrop-blur-md shadow-xl">
         <div>
-          <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            Identified Cards Inventory
-            <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-xs font-mono font-semibold text-cyan-400">
-              {identifiedCount} / {items.length} Ready
-            </span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Click any cell to edit metadata. Formatted for Card Dealer Pro (CDP) and Shopify CSV import.
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+            <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
+              📥 Batch Upload Staging Queue
+              <span className="rounded-full bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-0.5 text-xs font-mono font-bold text-cyan-300">
+                {items.length} Card{items.length === 1 ? "" : "s"} Staged
+              </span>
+            </h2>
+          </div>
+          <p className="text-xs text-slate-300 mt-1">
+            Review and approve your uploads here before clicking <strong className="text-cyan-300">"Add to Collection"</strong>. All metadata can be edited prior to final save.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {saveBatchMessage && (
-            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg animate-fade-in">
+            <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl animate-fade-in">
               ✓ {saveBatchMessage}
             </span>
           )}
 
-          {/* Save All to Collection Button */}
+          {/* Add Staged Batch to Collection Button */}
           <button
             onClick={handleSaveBatchAll}
-            disabled={identifiedCount === 0}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 px-3.5 py-2 text-xs font-bold text-white shadow-lg shadow-cyan-600/20 transition active:scale-95"
+            disabled={items.length === 0}
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 px-5 py-2.5 text-xs font-black text-white shadow-xl shadow-cyan-500/25 transition active:scale-95 ring-2 ring-cyan-500/30"
           >
-            <BookmarkPlus className="h-4 w-4" /> Save All to Collection
+            <BookmarkPlus className="h-4 w-4" /> 📥 Add Staged Batch to Collection
           </button>
 
           {/* Export CDP CSV Button */}

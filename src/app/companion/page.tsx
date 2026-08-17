@@ -71,6 +71,10 @@ function MobileCompanionContent() {
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [uid, setUid] = useState(initialUid);
 
+  // Capture Mode: "front_and_back" (default) or "front_only"
+  const [captureMode, setCaptureMode] = useState<"front_and_back" | "front_only">("front_and_back");
+  const [cameraPrompt, setCameraPrompt] = useState<string>("Take picture of FRONT");
+
   const [frontPreview, setFrontPreview] = useState<string | null>(null);
   const [backPreview, setBackPreview] = useState<string | null>(null);
   const [cardPrefix, setCardPrefix] = useState<string>("CARD-001");
@@ -110,6 +114,25 @@ function MobileCompanionContent() {
       setErrorMessage(null);
       const compressed = await compressMobileCapturedImage(file);
       setFrontPreview(compressed);
+
+      if (captureMode === "front_only") {
+        setBackPreview(compressed);
+        setCameraPrompt("Front captured! Sending to desktop staging...");
+        // Auto-send front-only card
+        setTimeout(() => {
+          sendToDesktopPayload(compressed, compressed);
+        }, 300);
+      } else {
+        setCameraPrompt("Take picture of BACK");
+        // Continuous Camera Flow: Auto-trigger back camera 400ms after front is captured
+        setTimeout(() => {
+          if (backInputRef.current) {
+            try {
+              backInputRef.current.click();
+            } catch (err) {}
+          }
+        }, 400);
+      }
     } catch (err: any) {
       setErrorMessage("Failed to process front image capture.");
     }
@@ -122,24 +145,27 @@ function MobileCompanionContent() {
       setErrorMessage(null);
       const compressed = await compressMobileCapturedImage(file);
       setBackPreview(compressed);
+      setCameraPrompt("Front & Back captured! Sending to desktop staging...");
+
+      // Auto-send paired card as soon as back photo is taken!
+      setTimeout(() => {
+        if (frontPreview) {
+          sendToDesktopPayload(frontPreview, compressed);
+        }
+      }, 300);
     } catch (err: any) {
       setErrorMessage("Failed to process back image capture.");
     }
   };
 
-  const handleSendToDesktop = async () => {
-    if (!frontPreview) {
-      setErrorMessage("Please snap at least the FRONT of the card.");
-      return;
-    }
-
+  const sendToDesktopPayload = async (frontImg: string, backImg: string) => {
     setIsUploading(true);
     setErrorMessage(null);
-    setUploadProgressMsg("Syncing live card to desktop...");
+    setUploadProgressMsg("Syncing card to desktop staging...");
 
     try {
-      let finalFrontUrl = frontPreview;
-      let finalBackUrl = backPreview || frontPreview;
+      let finalFrontUrl = frontImg;
+      let finalBackUrl = backImg;
 
       // 1. Try Firebase Storage with 1.5s fast timeout to prevent loading hangs
       try {
@@ -149,16 +175,16 @@ function MobileCompanionContent() {
 
         const uploadFront = async () => {
           const frontStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_front.jpg`);
-          await uploadString(frontStorageRef, frontPreview, "data_url");
+          await uploadString(frontStorageRef, frontImg, "data_url");
           return await getDownloadURL(frontStorageRef);
         };
 
         finalFrontUrl = await Promise.race([uploadFront(), timeoutPromise]);
 
-        if (backPreview) {
+        if (backImg) {
           const uploadBack = async () => {
             const backStorageRef = ref(storage, `users/${uid}/uploads/${sessionId}_back.jpg`);
-            await uploadString(backStorageRef, backPreview, "data_url");
+            await uploadString(backStorageRef, backImg, "data_url");
             return await getDownloadURL(backStorageRef);
           };
           finalBackUrl = await Promise.race([uploadBack(), timeoutPromise]);
@@ -267,14 +293,43 @@ function MobileCompanionContent() {
               </div>
             )}
 
+            {/* Mode Selection Pills */}
+            <div className="flex items-center rounded-xl bg-slate-900 p-1 border border-slate-800">
+              <button
+                onClick={() => setCaptureMode("front_and_back")}
+                className={`flex-1 py-2 text-xs font-black rounded-lg transition ${
+                  captureMode === "front_and_back"
+                    ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Front & Back (Default)
+              </button>
+              <button
+                onClick={() => setCaptureMode("front_only")}
+                className={`flex-1 py-2 text-xs font-black rounded-lg transition ${
+                  captureMode === "front_only"
+                    ? "bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Front Only
+              </button>
+            </div>
+
             {/* Big Prominent Camera Trigger Banner */}
             {!frontPreview && (
               <button
                 onClick={() => frontInputRef.current?.click()}
-                className="w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white font-black text-base shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-3 active:scale-95 transition ring-4 ring-cyan-500/20 animate-pulse"
+                className="w-full py-5 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 text-white font-black text-base shadow-xl shadow-cyan-500/25 flex flex-col items-center justify-center gap-1 active:scale-95 transition ring-4 ring-cyan-500/20 animate-pulse"
               >
-                <Camera className="h-6 w-6 text-white" />
-                <span>TAP HERE TO SNAP FRONT OF CARD</span>
+                <div className="flex items-center gap-2">
+                  <Camera className="h-6 w-6 text-white" />
+                  <span>{cameraPrompt}</span>
+                </div>
+                <span className="text-[11px] font-medium text-cyan-200 font-mono">
+                  {captureMode === "front_and_back" ? "Auto-advances to BACK after front snap" : "Auto-sends to desktop on snap"}
+                </span>
               </button>
             )}
 
@@ -365,7 +420,7 @@ function MobileCompanionContent() {
 
             {/* SEND TO DESKTOP BUTTON */}
             <button
-              onClick={handleSendToDesktop}
+              onClick={() => frontPreview && sendToDesktopPayload(frontPreview, backPreview || frontPreview)}
               disabled={isUploading || !frontPreview}
               className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-indigo-600 p-4 text-sm font-black text-white shadow-xl shadow-cyan-500/25 active:scale-95 disabled:opacity-50 transition"
             >

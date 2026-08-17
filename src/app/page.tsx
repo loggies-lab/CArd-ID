@@ -401,6 +401,7 @@ function CardIdApp() {
                 setItems={setItems}
                 onIdentifyBatch={handleIdentifyBatch}
                 isProcessing={isProcessing}
+                onOpenQrScanner={handleOpenQrScanner}
               />
             </section>
 
