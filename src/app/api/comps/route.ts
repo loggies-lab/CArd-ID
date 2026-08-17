@@ -71,27 +71,44 @@ export async function POST(req: Request) {
 
     const token = await getEbayAccessToken();
 
-    // Raw Card Search: Append negative terms to exclude graded slabs & bulk lots
-    const rawSearchQuery = `${cleanQuery} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
-    const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
-    searchUrl.searchParams.set("q", rawSearchQuery);
-    searchUrl.searchParams.set("limit", "50");
+    // Helper to generate cleaned fallback query variations
+    const cleanSearchStr = (str: string) => {
+      return str
+        .replace(/#/g, "") // Strip # character
+        .replace(/\b(202[4-9]|2030)\b/g, "") // Strip single standalone future years (e.g. 2026 -> matches 2025-26)
+        .replace(/\s+/g, " ")
+        .trim();
+    };
 
-    const ebayRes = await fetch(searchUrl.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
-      },
-    });
+    const queryVariations = [
+      cleanQuery,
+      cleanSearchStr(cleanQuery),
+    ].filter((q, idx, self) => q.length > 0 && self.indexOf(q) === idx);
 
-    if (!ebayRes.ok) {
-      const errorData = await ebayRes.text();
-      console.error("eBay API Error:", errorData);
-      throw new Error(`eBay API error: ${ebayRes.statusText}`);
+    let rawItems: any[] = [];
+
+    for (const qVar of queryVariations) {
+      const rawSearchQuery = `${qVar} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
+      const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
+      searchUrl.searchParams.set("q", rawSearchQuery);
+      searchUrl.searchParams.set("limit", "50");
+
+      const ebayRes = await fetch(searchUrl.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+        },
+      });
+
+      if (ebayRes.ok) {
+        const searchData = await ebayRes.json();
+        const found = searchData.itemSummaries || [];
+        if (found.length > 0) {
+          rawItems = found;
+          break;
+        }
+      }
     }
-
-    const searchData = await ebayRes.json();
-    const rawItems = searchData.itemSummaries || [];
 
     const gradedRegex = /\b(PSA|BGS|SGC|CGC|GMA|TAG|HGA|BVG|GAI|KSA|SLAB|GRADED|GEM\s*MINT|MINT\s*10|PSA\s*\d+|BGS\s*\d+)\b/i;
     const lotRegex = /\b(LOT\s*OF|BUNDLE|PACK|BOX|CASE|SET|REPRINT|DIGITAL)\b/i;

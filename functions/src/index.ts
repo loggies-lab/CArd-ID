@@ -178,26 +178,44 @@ export const getEbayComps = onRequest(
       const tokenData = await tokenRes.json();
       const token = tokenData.access_token;
 
-      // Raw card query: Append negative keywords to exclude slabs and bulk lots
-      const rawQuery = `${query} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
-      const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
-      searchUrl.searchParams.set("q", rawQuery);
-      searchUrl.searchParams.set("limit", "50");
+      // Helper to generate cleaned fallback query variations
+      const cleanSearchStr = (str: string) => {
+        return str
+          .replace(/#/g, "")
+          .replace(/\b(202[4-9]|2030)\b/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
 
-      const searchRes = await fetch(searchUrl.toString(), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
-        },
-      });
+      const queryVariations = [
+        query,
+        cleanSearchStr(query),
+      ].filter((q, idx, self) => q.length > 0 && self.indexOf(q) === idx);
 
-      if (!searchRes.ok) {
-        const errText = await searchRes.text();
-        throw new Error(`eBay Search API Error: ${errText}`);
+      let rawItems: any[] = [];
+
+      for (const qVar of queryVariations) {
+        const rawQuery = `${qVar} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
+        const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
+        searchUrl.searchParams.set("q", rawQuery);
+        searchUrl.searchParams.set("limit", "50");
+
+        const searchRes = await fetch(searchUrl.toString(), {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
+          },
+        });
+
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const found = searchData.itemSummaries || [];
+          if (found.length > 0) {
+            rawItems = found;
+            break;
+          }
+        }
       }
-
-      const searchData = await searchRes.json();
-      const rawItems = searchData.itemSummaries || [];
 
       // Regex patterns for pre-filtering non-raw cards
       const gradedRegex = /\b(PSA|BGS|SGC|CGC|GMA|TAG|HGA|BVG|GAI|KSA|SLAB|GRADED|GEM\s*MINT|MINT\s*10|PSA\s*\d+|BGS\s*\d+)\b/i;
