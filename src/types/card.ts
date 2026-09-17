@@ -89,6 +89,8 @@ export function getTotalGradingCost(settings?: Partial<UserSettings>): number {
   return 25.0;
 }
 
+export type TriageStatus = 'INBOX' | 'GRADE_CANDIDATE' | 'EBAY_RAW' | 'DOLLAR_BIN';
+
 export interface CDPCardSchema {
   playerName: string;
   brand: string;
@@ -115,6 +117,7 @@ export interface CDPCardSchema {
   lastPriceRefreshedAt?: string;
   gradingAnalysis?: GradingAnalysis;
   aiUsage?: AIUsageStats;
+  triageStatus?: TriageStatus;
 }
 
 export interface AIUsageStats {
@@ -141,6 +144,7 @@ export interface CardItem {
   errorMessage?: string;
   data?: CDPCardSchema;
   aiUsage?: AIUsageStats;
+  triageStatus?: TriageStatus;
 }
 
 export interface SavedCollectionItem {
@@ -154,4 +158,42 @@ export interface SavedCollectionItem {
   notes?: string;
   data: CDPCardSchema;
   aiUsage?: AIUsageStats;
+  triageStatus?: TriageStatus;
+}
+
+/**
+ * Maps a card to its active triage status.
+ * If the card has an explicit triageStatus set, it returns that value.
+ * Otherwise, maps existing AI recommendations and price cutoffs, defaulting to 'INBOX'.
+ */
+export function getCardTriageStatus(
+  card: CardItem | SavedCollectionItem | { data?: CDPCardSchema; triageStatus?: TriageStatus }
+): TriageStatus {
+  if (card.triageStatus) {
+    return card.triageStatus;
+  }
+  if (card.data?.triageStatus) {
+    return card.data.triageStatus;
+  }
+
+  // Map existing AI recommendations or grading analysis
+  const gradingAnalysis = card.data?.gradingAnalysis;
+  if (gradingAnalysis?.recommendationTier === "do_it" || gradingAnalysis?.isRecommended) {
+    return "GRADE_CANDIDATE";
+  }
+
+  const estimatedValue = card.data?.estimatedValue;
+  if (estimatedValue !== undefined && estimatedValue > 0) {
+    if (estimatedValue >= 30.0 && gradingAnalysis?.netProfitPSA10 && gradingAnalysis.netProfitPSA10 > 0) {
+      return "GRADE_CANDIDATE";
+    }
+    if (estimatedValue >= 4.0) {
+      return "EBAY_RAW";
+    }
+    if (estimatedValue > 0 && estimatedValue < 4.0) {
+      return "DOLLAR_BIN";
+    }
+  }
+
+  return "INBOX";
 }

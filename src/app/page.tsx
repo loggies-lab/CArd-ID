@@ -136,6 +136,7 @@ function CardIdApp() {
     saveBatch,
     updateSavedCardData,
     updateSavedCardDataBatch,
+    updateCardTriageStatus,
     renameBatch,
     removeCard,
     clearCollection,
@@ -730,6 +731,7 @@ function CardIdApp() {
               clearCollection={clearCollection}
               onInspectCard={(card) => setInspectingCard(card)}
               updateSavedCardDataBatch={updateSavedCardDataBatch}
+              updateCardTriageStatus={updateCardTriageStatus}
               renameBatch={renameBatch}
             />
           </section>

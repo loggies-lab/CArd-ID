@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { CardItem, SavedCollectionItem, CDPCardSchema } from "@/types/card";
+import { CardItem, SavedCollectionItem, CDPCardSchema, TriageStatus } from "@/types/card";
 import { fileToOptimizedBase64, compressBase64DataUrl } from "@/lib/imageOptimizer";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/context/AuthContext";
@@ -389,6 +389,32 @@ export function useCollection() {
     return true;
   };
 
+  const updateCardTriageStatus = async (id: string, triageStatus: TriageStatus) => {
+    const target = savedCards.find((c) => c.id === id);
+    if (!target) return;
+
+    const updatedData: CDPCardSchema = {
+      ...target.data,
+      triageStatus,
+    };
+    const updatedItem: SavedCollectionItem = {
+      ...target,
+      triageStatus,
+      data: updatedData,
+    };
+
+    if (uid) {
+      try {
+        await setDoc(doc(db, "users", uid, "cards", id), updatedItem);
+      } catch (e) {
+        console.error("Failed to update triage status in Firestore:", e);
+      }
+    }
+
+    const updated = savedCards.map((c) => (c.id === id ? updatedItem : c));
+    updateLocalCache(updated);
+  };
+
   const isSaved = (id: string) => {
     return savedCards.some((c) => c.id === id);
   };
@@ -400,6 +426,7 @@ export function useCollection() {
     saveBatch,
     updateSavedCardData,
     updateSavedCardDataBatch,
+    updateCardTriageStatus,
     renameBatch,
     removeCard,
     clearCollection,

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { SavedCollectionItem, CDPCardSchema } from "@/types/card";
+import { SavedCollectionItem, CDPCardSchema, TriageStatus, getCardTriageStatus } from "@/types/card";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import { useAuth } from "@/context/AuthContext";
@@ -40,6 +40,7 @@ import {
   ArrowDown,
   Edit3,
   Check,
+  Package,
 } from "lucide-react";
 
 interface CollectionTabProps {
@@ -48,6 +49,7 @@ interface CollectionTabProps {
   clearCollection: () => void;
   onInspectCard?: (card: SavedCollectionItem) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
+  updateCardTriageStatus?: (id: string, triageStatus: TriageStatus) => Promise<void> | void;
   renameBatch?: (batchId: string, newBatchName: string) => Promise<boolean>;
 }
 
@@ -59,12 +61,14 @@ export function CollectionTab({
   clearCollection,
   onInspectCard,
   updateSavedCardDataBatch,
+  updateCardTriageStatus,
   renameBatch,
 }: CollectionTabProps) {
   const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSport, setSelectedSport] = useState("all");
   const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
+  const [selectedTriageStatus, setSelectedTriageStatus] = useState<"ALL" | TriageStatus>("ALL");
   const [filterRookie, setFilterRookie] = useState(false);
   const [filterAuto, setFilterAuto] = useState(false);
   const [filterMem, setFilterMem] = useState(false);
@@ -177,6 +181,24 @@ export function CollectionTab({
     return { total, rookies, autos, mems, portfolioValue, valuedCount: valuedCards.length, unpricedCount };
   }, [savedCards]);
 
+  // Triage Status counts for tab filtering badges
+  const triageCounts = useMemo(() => {
+    const counts: Record<"ALL" | TriageStatus, number> = {
+      ALL: savedCards.length,
+      INBOX: 0,
+      GRADE_CANDIDATE: 0,
+      EBAY_RAW: 0,
+      DOLLAR_BIN: 0,
+    };
+    savedCards.forEach((c) => {
+      const status = getCardTriageStatus(c);
+      if (counts[status] !== undefined) {
+        counts[status]++;
+      }
+    });
+    return counts;
+  }, [savedCards]);
+
   // Unique sports list for filter dropdown
   const availableSports = useMemo(() => {
     const set = new Set<string>();
@@ -259,8 +281,10 @@ export function CollectionTab({
       const matchesRookie = !filterRookie || card.isRookie;
       const matchesAuto = !filterAuto || card.isAutographed;
       const matchesMem = !filterMem || card.isMemorabilia;
+      const currentTriage = getCardTriageStatus(item);
+      const matchesTriage = selectedTriageStatus === "ALL" || currentTriage === selectedTriageStatus;
 
-      return matchesSearch && matchesSport && matchesBatch && matchesRookie && matchesAuto && matchesMem;
+      return matchesSearch && matchesSport && matchesBatch && matchesRookie && matchesAuto && matchesMem && matchesTriage;
     });
 
     // Sort by active field and direction
@@ -283,7 +307,7 @@ export function CollectionTab({
 
       return sortOrder === "asc" ? comparison : -comparison;
     });
-  }, [savedCards, searchTerm, selectedSport, selectedBatchId, filterRookie, filterAuto, filterMem, sortBy, sortOrder]);
+  }, [savedCards, searchTerm, selectedSport, selectedBatchId, filterRookie, filterAuto, filterMem, selectedTriageStatus, sortBy, sortOrder]);
 
   // Count matches across ALL batches regardless of selectedBatchId (to warn user if active batch hides results)
   const totalMatchesAcrossAllBatches = useMemo(() => {
@@ -334,6 +358,12 @@ export function CollectionTab({
     ) : (
       <ArrowDown className="h-3 w-3 inline ml-1 text-cyan-400 font-bold" />
     );
+  };
+
+  const handleUpdateStatus = async (cardId: string, newStatus: TriageStatus) => {
+    if (updateCardTriageStatus) {
+      await updateCardTriageStatus(cardId, newStatus);
+    }
   };
 
   // Selection Handlers (Supports Tab / Shift Range Selection)
@@ -885,6 +915,68 @@ export function CollectionTab({
         </div>
       )}
 
+      {/* SECTION 3: INVENTORY TRIAGE STATUS TABS */}
+      <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-thin">
+        {[
+          {
+            id: "ALL" as const,
+            label: "All Cards",
+            count: triageCounts.ALL,
+            icon: Layers,
+            activeCls: "border-cyan-500 bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30",
+            badgeCls: "bg-cyan-500/20 text-cyan-200",
+          },
+          {
+            id: "GRADE_CANDIDATE" as const,
+            label: "Grading Queue (PSA)",
+            count: triageCounts.GRADE_CANDIDATE,
+            icon: Award,
+            activeCls: "border-emerald-500 bg-emerald-500/15 text-emerald-300 ring-1 ring-emerald-500/30",
+            badgeCls: "bg-emerald-500/20 text-emerald-200",
+          },
+          {
+            id: "EBAY_RAW" as const,
+            label: "eBay Raw Queue",
+            count: triageCounts.EBAY_RAW,
+            icon: DollarSign,
+            activeCls: "border-blue-500 bg-blue-500/15 text-blue-300 ring-1 ring-blue-500/30",
+            badgeCls: "bg-blue-500/20 text-blue-200",
+          },
+          {
+            id: "DOLLAR_BIN" as const,
+            label: "Dollar Bin / Bulk",
+            count: triageCounts.DOLLAR_BIN,
+            icon: Package,
+            activeCls: "border-amber-500 bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/30",
+            badgeCls: "bg-amber-500/20 text-amber-200",
+          },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = selectedTriageStatus === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedTriageStatus(tab.id)}
+              className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap border shadow-sm ${
+                isActive
+                  ? tab.activeCls
+                  : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{tab.label}</span>
+              <span
+                className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                  isActive ? tab.badgeCls : "bg-slate-800 text-slate-400"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Toolbar & Filter Section */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1158,6 +1250,7 @@ export function CollectionTab({
           {filteredCards.map((item) => {
             const card = item.data;
             const isSelected = selectedIds.has(item.id);
+            const currentStatus = getCardTriageStatus(item);
             return (
               <div
                 key={item.id}
@@ -1301,6 +1394,60 @@ export function CollectionTab({
                     <span>ID: {item.prefix}</span>
                     <span>Added: {new Date(item.dateAdded).toLocaleDateString()}</span>
                   </div>
+
+                  {/* Manual Inventory Triage Action Buttons */}
+                  <div className="pt-2.5 border-t border-slate-800/80 mt-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1.5">
+                      <span className="uppercase font-semibold tracking-wider">Triage Queue:</span>
+                      <span className={`font-bold ${
+                        currentStatus === 'GRADE_CANDIDATE' ? 'text-emerald-400' :
+                        currentStatus === 'EBAY_RAW' ? 'text-blue-400' :
+                        currentStatus === 'DOLLAR_BIN' ? 'text-amber-400' : 'text-slate-400'
+                      }`}>
+                        {currentStatus === 'GRADE_CANDIDATE' ? 'PSA Candidate' :
+                         currentStatus === 'EBAY_RAW' ? 'eBay Raw' :
+                         currentStatus === 'DOLLAR_BIN' ? 'Dollar Bin' : 'Inbox'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(item.id, 'GRADE_CANDIDATE')}
+                        title="Set status to PSA Grading Queue"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'GRADE_CANDIDATE'
+                            ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50"
+                        }`}
+                      >
+                        → PSA
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(item.id, 'EBAY_RAW')}
+                        title="Set status to Sell Raw on eBay"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'EBAY_RAW'
+                            ? "bg-blue-500 text-slate-950 border-blue-400 shadow-sm shadow-blue-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-blue-400 border-blue-500/25 hover:bg-blue-500/15 hover:border-blue-500/50"
+                        }`}
+                      >
+                        → Sell Raw
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateStatus(item.id, 'DOLLAR_BIN')}
+                        title="Set status to Dollar Bin / Bulk"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'DOLLAR_BIN'
+                            ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-amber-400 border-amber-500/25 hover:bg-amber-500/15 hover:border-amber-500/50"
+                        }`}
+                      >
+                        → $ Bin
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             );
@@ -1369,6 +1516,8 @@ export function CollectionTab({
                     Date Saved {renderSortIndicator("dateAdded")}
                   </th>
 
+                  <th className="p-3 min-w-[270px]">Triage Action</th>
+
                   <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -1376,6 +1525,7 @@ export function CollectionTab({
                 {filteredCards.map((item) => {
                   const card = item.data;
                   const isSelected = selectedIds.has(item.id);
+                  const currentStatus = getCardTriageStatus(item);
 
                   return (
                     <tr
@@ -1486,6 +1636,46 @@ export function CollectionTab({
                       </td>
                       <td className="p-3 font-mono text-slate-400">
                         {new Date(item.dateAdded).toLocaleDateString()}
+                      </td>
+                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStatus(item.id, 'GRADE_CANDIDATE')}
+                            title="Send to PSA"
+                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                              currentStatus === 'GRADE_CANDIDATE'
+                                ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30 font-extrabold"
+                                : "bg-slate-950/80 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50"
+                            }`}
+                          >
+                            → Send to PSA
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStatus(item.id, 'EBAY_RAW')}
+                            title="Sell Raw"
+                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                              currentStatus === 'EBAY_RAW'
+                                ? "bg-blue-500 text-slate-950 border-blue-400 shadow-sm shadow-blue-500/30 font-extrabold"
+                                : "bg-slate-950/80 text-blue-400 border-blue-500/25 hover:bg-blue-500/15 hover:border-blue-500/50"
+                            }`}
+                          >
+                            → Sell Raw
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateStatus(item.id, 'DOLLAR_BIN')}
+                            title="Dollar Bin"
+                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                              currentStatus === 'DOLLAR_BIN'
+                                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-extrabold"
+                                : "bg-slate-950/80 text-amber-400 border-amber-500/25 hover:bg-amber-500/15 hover:border-amber-500/50"
+                            }`}
+                          >
+                            → Dollar Bin
+                          </button>
+                        </div>
                       </td>
                       <td className="p-3 text-right">
                         <div className="flex items-center justify-end gap-1">
