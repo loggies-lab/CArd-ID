@@ -747,6 +747,7 @@ function CardIdApp() {
               settings={gradingSettings}
               onInspectCard={(card) => setInspectingCard(card)}
               updateSavedCardDataBatch={updateSavedCardDataBatch}
+              updateCardTriageStatus={updateCardTriageStatus}
               onNavigateToGrading={() => setActiveTab("grading")}
               onOpenSettings={() => setIsSettingsOpen(true)}
             />
@@ -765,6 +766,7 @@ function CardIdApp() {
                 onInspectCard={(card) => setInspectingCard(card)}
                 onUpdateCard={handleSaveCardDetails}
                 updateSavedCardDataBatch={updateSavedCardDataBatch}
+                updateCardTriageStatus={updateCardTriageStatus}
               />
             </ErrorBoundary>
           </section>

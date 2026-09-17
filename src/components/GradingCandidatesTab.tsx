@@ -11,6 +11,8 @@ import {
   GradingTargetGrade,
   GradingRecommendationTier,
   getTotalGradingCost,
+  TriageStatus,
+  getCardTriageStatus,
 } from "@/types/card";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import {
@@ -42,6 +44,7 @@ interface GradingCandidatesTabProps {
   onInspectCard?: (card: CardItem | SavedCollectionItem) => void;
   onUpdateCard?: (cardId: string, updatedData: CDPCardSchema) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
+  updateCardTriageStatus?: (id: string, triageStatus: TriageStatus) => Promise<void> | void;
 }
 
 interface EvaluatedCard {
@@ -172,6 +175,7 @@ export function GradingCandidatesTab({
   onInspectCard,
   onUpdateCard,
   updateSavedCardDataBatch,
+  updateCardTriageStatus,
 }: GradingCandidatesTabProps) {
   const minProfitTarget = settings?.minGradingProfit ?? settings?.minNetProfitThreshold ?? 50.0;
   const minRoiTarget = settings?.minGradingRoiPct ?? settings?.minRoiThreshold ?? 50.0;
@@ -1165,6 +1169,7 @@ export function GradingCandidatesTab({
           {sortedAndFilteredCards.map((item) => {
             const evalData = evaluatedMap[item.id];
             const d = item.data;
+            const currentStatus = getCardTriageStatus(item);
             const title = generateCdpTitle(d || {});
             const rawVal = evalData?.rawVal || d?.estimatedValue || 0;
             const fee = effectiveGradingFee;
@@ -1510,6 +1515,62 @@ export function GradingCandidatesTab({
                     )}
                   </div>
                 </div>
+
+                {/* Manual Triage Route Bar: Yes to Grade / Sell Raw / Dollar Bin */}
+                {updateCardTriageStatus && (
+                  <div className="pt-2.5 border-t border-slate-800/80 space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                      <span className="uppercase font-semibold tracking-wider">Triage Route:</span>
+                      <span className={`font-bold ${
+                        currentStatus === 'GRADE_CANDIDATE' ? 'text-emerald-400' :
+                        currentStatus === 'EBAY_RAW' ? 'text-blue-400' :
+                        currentStatus === 'DOLLAR_BIN' ? 'text-amber-400' : 'text-slate-400'
+                      }`}>
+                        {currentStatus === 'GRADE_CANDIDATE' ? '✓ Marked for PSA' :
+                         currentStatus === 'EBAY_RAW' ? 'eBay Raw Queue' :
+                         currentStatus === 'DOLLAR_BIN' ? 'Dollar Bin' : 'Inbox (Unassigned)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => updateCardTriageStatus(item.id, 'GRADE_CANDIDATE')}
+                        title="Mark as Yes to Grade (moves to PSA Queue, excludes from raw eBay singles)"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'GRADE_CANDIDATE'
+                            ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50"
+                        }`}
+                      >
+                        ✓ Yes to Grade
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateCardTriageStatus(item.id, 'EBAY_RAW')}
+                        title="Route to Sell Raw on eBay"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'EBAY_RAW'
+                            ? "bg-blue-500 text-slate-950 border-blue-400 shadow-sm shadow-blue-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-blue-400 border-blue-500/25 hover:bg-blue-500/15 hover:border-blue-500/50"
+                        }`}
+                      >
+                        → Sell Raw
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateCardTriageStatus(item.id, 'DOLLAR_BIN')}
+                        title="Route to Dollar Bin / Bulk"
+                        className={`px-1 py-1 rounded-lg text-[10px] font-mono font-bold transition flex items-center justify-center border text-center ${
+                          currentStatus === 'DOLLAR_BIN'
+                            ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-extrabold"
+                            : "bg-slate-950/80 text-amber-400 border-amber-500/25 hover:bg-amber-500/15 hover:border-amber-500/50"
+                        }`}
+                      >
+                        → $ Bin
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

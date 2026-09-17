@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { SavedCollectionItem, CardItem, CDPCardSchema, UserSettings } from "@/types/card";
+import { SavedCollectionItem, CardItem, CDPCardSchema, UserSettings, TriageStatus, getCardTriageStatus } from "@/types/card";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
 import { calculateEbayNetProceeds } from "@/lib/userSettings";
@@ -34,6 +34,7 @@ interface EbayCandidatesTabProps {
   settings?: UserSettings;
   onInspectCard?: (card: SavedCollectionItem) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
+  updateCardTriageStatus?: (id: string, triageStatus: TriageStatus) => Promise<void> | void;
   onNavigateToGrading?: () => void;
   onOpenSettings?: () => void;
 }
@@ -46,6 +47,7 @@ export function EbayCandidatesTab({
   settings,
   onInspectCard,
   updateSavedCardDataBatch,
+  updateCardTriageStatus,
   onNavigateToGrading,
   onOpenSettings,
 }: EbayCandidatesTabProps) {
@@ -69,14 +71,34 @@ export function EbayCandidatesTab({
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle: string } | null>(null);
 
   // Split collection into eBay Singles (>= activeMinRaw) vs Bulk Lot ($1.00 - activeMinRaw)
-  const { ebayCandidates, bulkLotCards, totalEbayValue, totalEbayNetValue, totalBulkValue } = useMemo(() => {
+  // Excludes any card marked as Yes to Grade (PSA Grading Queue)
+  const { ebayCandidates, bulkLotCards, totalEbayValue, totalEbayNetValue, totalBulkValue, psaGradeCount } = useMemo(() => {
     const ebayList: SavedCollectionItem[] = [];
     const bulkList: SavedCollectionItem[] = [];
+    let psaCount = 0;
     let ebaySum = 0;
     let ebayNetSum = 0;
     let bulkSum = 0;
 
     savedCards.forEach((card) => {
+      const triage = getCardTriageStatus(card);
+      const isMarkedForGrading =
+        card.triageStatus === "GRADE_CANDIDATE" ||
+        card.data.triageStatus === "GRADE_CANDIDATE" ||
+        triage === "GRADE_CANDIDATE";
+
+      if (isMarkedForGrading) {
+        psaCount++;
+        return; // Strictly exclude cards marked as yes to grade from the raw eBay list
+      }
+
+      // If explicitly marked as Dollar Bin, exclude from eBay raw singles list
+      if (card.triageStatus === "DOLLAR_BIN" || card.data.triageStatus === "DOLLAR_BIN") {
+        bulkList.push(card);
+        bulkSum += card.data.estimatedValue || 0;
+        return;
+      }
+
       const val = card.data.estimatedValue || 0;
       if (val >= activeMinRaw) {
         ebayList.push(card);
@@ -94,6 +116,7 @@ export function EbayCandidatesTab({
       totalEbayValue: ebaySum,
       totalEbayNetValue: ebayNetSum,
       totalBulkValue: bulkSum,
+      psaGradeCount: psaCount,
     };
   }, [savedCards, activeMinRaw, settings]);
 
@@ -289,29 +312,29 @@ export function EbayCandidatesTab({
         </div>
 
         {/* PSA Upgrade Candidates Stat */}
-        <div className="rounded-2xl border border-cyan-500/30 bg-slate-900/80 p-5 backdrop-blur-xl space-y-2 shadow-xl">
+        <div className="rounded-2xl border border-emerald-500/30 bg-slate-900/80 p-5 backdrop-blur-xl space-y-2 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
-              Grading ROI Candidates (≥ $30)
+              Routed to PSA Grading
             </span>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
               <Award className="h-4 w-4" />
             </div>
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-2xl font-black text-cyan-400 font-mono">
-              {ebayCandidates.filter((c) => (c.data.estimatedValue || 0) >= 30.0).length} cards
+            <span className="text-2xl font-black text-emerald-400 font-mono">
+              {psaGradeCount} cards
             </span>
             {onNavigateToGrading && (
               <button
                 onClick={onNavigateToGrading}
-                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 underline"
+                className="text-xs font-bold text-emerald-400 hover:text-emerald-300 underline"
               >
-                View ROI 🔥 →
+                View in Grading →
               </button>
             )}
           </div>
-          <p className="text-[11px] text-slate-400">High-value cards ready for PSA submission audit.</p>
+          <p className="text-[11px] text-slate-400">Marked as yes to grade (excluded from raw eBay list).</p>
         </div>
       </div>
 
@@ -505,14 +528,26 @@ export function EbayCandidatesTab({
                     </td>
 
                     <td className="px-4 py-3 text-right">
-                      {onInspectCard && (
-                        <button
-                          onClick={() => onInspectCard(card)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-800 hover:border-slate-700 text-[11px] font-semibold text-slate-300 hover:text-white transition"
-                        >
-                          <Eye className="h-3.5 w-3.5 text-cyan-400" /> Inspect / Comps
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-1.5">
+                        {updateCardTriageStatus && (
+                          <button
+                            type="button"
+                            onClick={() => updateCardTriageStatus(card.id, 'GRADE_CANDIDATE')}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-[11px] font-mono font-bold text-emerald-400 hover:text-emerald-300 transition shadow-sm active:scale-95"
+                            title="Mark as Yes to Grade (moves card to PSA Grading Queue and excludes from raw eBay list)"
+                          >
+                            <Award className="h-3 w-3 text-emerald-400" /> → Send to PSA
+                          </button>
+                        )}
+                        {onInspectCard && (
+                          <button
+                            onClick={() => onInspectCard(card)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-800 hover:border-slate-700 text-[11px] font-semibold text-slate-300 hover:text-white transition"
+                          >
+                            <Eye className="h-3.5 w-3.5 text-cyan-400" /> Inspect
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
