@@ -71,26 +71,29 @@ export async function POST(req: Request) {
 
     const token = await getEbayAccessToken();
 
-    // Helper to generate cleaned fallback query variations
-    const cleanSearchStr = (str: string) => {
-      return str
-        .replace(/#/g, "") // Strip # character
-        .replace(/\b(202[4-9]|2030)\b/g, "") // Strip single standalone future years (e.g. 2026 -> matches 2025-26)
-        .replace(/\s+/g, " ")
-        .trim();
+    // Ultra-smart multi-stage search query generator for eBay API
+    const buildQueryStages = (raw: string): string[] => {
+      const cleanNoSymbol = raw.replace(/#/g, "").replace(/\s+/g, " ").trim();
+      const cleanNoYear = cleanNoSymbol.replace(/\b(202[0-9]|2030)\b/g, "").replace(/\s+/g, " ").trim();
+      const noSport = cleanNoYear.replace(/\b(Basketball|Football|Baseball|Soccer|Hockey)\b/gi, "").replace(/\s+/g, " ").trim();
+
+      const stages = [
+        raw,
+        cleanNoSymbol,
+        cleanNoYear,
+        noSport,
+      ];
+
+      return stages.filter((q, idx, self) => q.length > 0 && self.indexOf(q) === idx);
     };
 
-    const queryVariations = [
-      cleanQuery,
-      cleanSearchStr(cleanQuery),
-    ].filter((q, idx, self) => q.length > 0 && self.indexOf(q) === idx);
+    const queryVariations = buildQueryStages(cleanQuery);
 
     let rawItems: any[] = [];
 
     for (const qVar of queryVariations) {
-      const rawSearchQuery = `${qVar} -PSA -BGS -SGC -CGC -Graded -Lot -Pack -Box -Digital`;
       const searchUrl = new URL("https://api.ebay.com/buy/browse/v1/item_summary/search");
-      searchUrl.searchParams.set("q", rawSearchQuery);
+      searchUrl.searchParams.set("q", qVar);
       searchUrl.searchParams.set("limit", "50");
 
       const ebayRes = await fetch(searchUrl.toString(), {
@@ -215,11 +218,23 @@ export async function POST(req: Request) {
 
     let psa10Value: number | undefined = undefined;
     let psa9Value: number | undefined = undefined;
+    let psa10Sales: any[] = [];
+    let psa9Sales: any[] = [];
     let gradingAnalysis: any = undefined;
 
-    if (includeGraded) {
+    const shouldIncludeGraded = includeGraded !== undefined ? Boolean(includeGraded) : true;
+
+    if (shouldIncludeGraded) {
       try {
-        const queryCleaned = cleanQuery.replace(/\bBase\b/gi, "").replace(/#/g, "").trim();
+        const queryCleaned = cleanQuery
+          .replace(/Parallel:\s*/gi, "")
+          .replace(/Subset:\s*/gi, "")
+          .replace(/\b(19\d\d|20\d\d)\s+\1-\d\d\b/gi, (match) => match.split(/\s+/)[1])
+          .replace(/\bBase\b/gi, "")
+          .replace(/#/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
         const isBaseCard = /\bBase\b/i.test(cleanQuery) || !/\b(Refractor|Prizm|Parallel|\/\d+)\b/i.test(cleanQuery);
         const parallelRegex = /\b(\d+\s*\/\s*\d+|\/\d+|Shimmer|Choice|Pandora|Scope|Camo|Black|Orange|Gold|Silver|Hyper|Velocity|Red|Blue|Green|Purple|Pink|Pulsar|Mosaic|Optic|Refractor|Disco|Ice|Wave|Sparkle|Cherry|Auto|Autograph|Patch|Jersey)\b/i;
 
@@ -235,15 +250,28 @@ export async function POST(req: Request) {
         if (psa10Res.ok) {
           const data10 = await psa10Res.json();
           const raw10 = data10.itemSummaries || [];
-          const valid10Prices = raw10
-            .map((i: any) => ({ title: i.title || "", price: parseFloat(i.price?.value || "0") }))
-            .filter((s: any) => s.price > 0 && (!isBaseCard || !parallelRegex.test(s.title)))
+          const filtered10 = raw10.filter((i: any) => {
+            const price = parseFloat(i.price?.value || "0");
+            const title = i.title || "";
+            return price > 0 && (!isBaseCard || !parallelRegex.test(title));
+          });
+
+          psa10Sales = filtered10.map((i: any) => ({
+            title: i.title || "",
+            price: parseFloat(i.price?.value || "0"),
+            currency: i.price?.currency || "USD",
+            imageUrl: i.image?.imageUrl || i.thumbnailImages?.[0]?.imageUrl || "",
+            itemWebUrl: i.itemWebUrl || "",
+            grade: `${gradingCompany} 10`,
+          }));
+
+          const valid10Prices = psa10Sales
             .map((s: any) => s.price)
             .sort((a: number, b: number) => a - b);
 
           if (valid10Prices.length > 0) {
             const median10 = getPercentile(valid10Prices, 0.5);
-            if (median10 >= rawVal * 2.0 && median10 <= Math.max(100, rawVal * 70)) {
+            if (median10 >= rawVal * 1.2) {
               psa10Value = parseFloat(median10.toFixed(2));
             }
           }
@@ -261,35 +289,71 @@ export async function POST(req: Request) {
         if (psa9Res.ok) {
           const data9 = await psa9Res.json();
           const raw9 = data9.itemSummaries || [];
-          const valid9Prices = raw9
-            .map((i: any) => ({ title: i.title || "", price: parseFloat(i.price?.value || "0") }))
-            .filter((s: any) => s.price > 0 && (!isBaseCard || !parallelRegex.test(s.title)))
+          const filtered9 = raw9.filter((i: any) => {
+            const price = parseFloat(i.price?.value || "0");
+            const title = i.title || "";
+            return price > 0 && (!isBaseCard || !parallelRegex.test(title));
+          });
+
+          psa9Sales = filtered9.map((i: any) => ({
+            title: i.title || "",
+            price: parseFloat(i.price?.value || "0"),
+            currency: i.price?.currency || "USD",
+            imageUrl: i.image?.imageUrl || i.thumbnailImages?.[0]?.imageUrl || "",
+            itemWebUrl: i.itemWebUrl || "",
+            grade: `${gradingCompany} 9`,
+          }));
+
+          const valid9Prices = psa9Sales
             .map((s: any) => s.price)
             .sort((a: number, b: number) => a - b);
 
           if (valid9Prices.length > 0) {
             const median9 = getPercentile(valid9Prices, 0.5);
-            if (median9 >= rawVal * 1.1 && median9 <= Math.max(50, rawVal * 25)) {
+            if (median9 >= rawVal * 1.0) {
               psa9Value = parseFloat(median9.toFixed(2));
             }
           }
         }
 
-        // 3. Fallback Multipliers aligned with PSA Market Price Guide
-        if (!psa10Value) {
-          const psa10Multiplier = rawVal <= 3.0 ? 45.0 : (gradingCompany === "PSA" ? 11.72 : 8.2);
-          psa10Value = parseFloat((rawVal * psa10Multiplier).toFixed(2));
+        // 3. Intelligent Cross-Anchoring & Sanity Check
+        if (psa10Value && psa9Value && psa10Value > psa9Value * 12) {
+          psa10Value = undefined;
         }
 
-        if (!psa9Value) {
-          const psa9Multiplier = rawVal <= 3.0 ? 12.0 : (gradingCompany === "PSA" ? 3.41 : 2.8);
-          psa9Value = parseFloat((rawVal * psa9Multiplier).toFixed(2));
+        if (psa9Value && !psa10Value) {
+          psa10Value = parseFloat((psa9Value * 2.8).toFixed(2));
+        } else if (psa10Value && !psa9Value) {
+          psa9Value = parseFloat((psa10Value * 0.40).toFixed(2));
+        } else if (!psa10Value && !psa9Value) {
+          const mult10 = rawVal <= 5.0 ? 3.5 : 2.8;
+          const mult9 = rawVal <= 5.0 ? 1.8 : 1.4;
+          psa10Value = parseFloat((rawVal * mult10).toFixed(2));
+          psa9Value = parseFloat((rawVal * mult9).toFixed(2));
         }
 
-        const netProfitPSA10 = parseFloat((psa10Value - (rawVal + estimatedGradingFee)).toFixed(2));
-        const netProfitPSA9 = parseFloat((psa9Value - (rawVal + estimatedGradingFee)).toFixed(2));
-        const roiPSA10 = parseFloat(((netProfitPSA10 / (rawVal + estimatedGradingFee)) * 100).toFixed(1));
-        const isRecommended = netProfitPSA10 >= 15.0;
+        // 4. Strict Hierarchy Invariants: PSA 10 >= PSA 9 >= Raw
+        let safePsa10 = psa10Value ?? parseFloat((rawVal * 2.8).toFixed(2));
+        let safePsa9 = psa9Value ?? parseFloat((rawVal * 1.4).toFixed(2));
+
+        if (safePsa9 >= safePsa10) {
+          safePsa10 = parseFloat((safePsa9 * 2.5).toFixed(2));
+        }
+        if (safePsa9 < rawVal) {
+          safePsa9 = parseFloat((rawVal * 1.15).toFixed(2));
+        }
+        if (safePsa10 < rawVal * 1.4) {
+          safePsa10 = parseFloat((rawVal * 2.5).toFixed(2));
+        }
+
+        psa10Value = safePsa10;
+        psa9Value = safePsa9;
+
+        const totalInvestment = rawVal + estimatedGradingFee;
+        const netProfitPSA10 = parseFloat((psa10Value - totalInvestment).toFixed(2));
+        const netProfitPSA9 = parseFloat((psa9Value - totalInvestment).toFixed(2));
+        const roiPSA10 = parseFloat(((netProfitPSA10 / totalInvestment) * 100).toFixed(1));
+        const isRecommended = netProfitPSA10 >= 20.0 && roiPSA10 >= 25.0;
 
         gradingAnalysis = {
           psa10Value,
@@ -300,9 +364,11 @@ export async function POST(req: Request) {
           roiPSA10,
           isRecommended,
           recommendationReason: isRecommended
-            ? `🔥 High ROI: Est. Net Profit +$${netProfitPSA10.toFixed(2)} on ${gradingCompany} 10`
-            : `Low ROI: Net Profit +$${netProfitPSA10.toFixed(2)} on ${gradingCompany} 10`,
+            ? `🔥 High ROI: Est. Net Profit +$${netProfitPSA10.toFixed(2)} (${roiPSA10}% ROI) on ${gradingCompany} 10`
+            : `Low ROI: Est. Net Profit $${netProfitPSA10.toFixed(2)} on ${gradingCompany} 10`,
           lastEvaluated: new Date().toISOString(),
+          psa10Sales,
+          psa9Sales,
         };
       } catch (gErr) {
         console.warn("Graded comps query warning:", gErr);
@@ -321,6 +387,8 @@ export async function POST(req: Request) {
       outlierCount: outliersCount,
       psa10Value,
       psa9Value,
+      psa10Sales,
+      psa9Sales,
       gradingAnalysis,
       recentSales: sales,
     });

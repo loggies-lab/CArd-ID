@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { CardItem, CDPCardSchema } from "@/types/card";
-import { Download, RefreshCw, AlertCircle, CheckCircle, Edit3, Eye, Trash2, BookmarkPlus, BookmarkCheck } from "lucide-react";
+import { Download, RefreshCw, AlertCircle, CheckCircle, Edit3, Eye, Trash2, BookmarkPlus, BookmarkCheck, Search, X, Zap } from "lucide-react";
 import { exportCardsToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 
@@ -14,6 +14,7 @@ interface CardTableProps {
   saveBatch: (items: CardItem[]) => Promise<number> | number;
   isSaved: (id: string) => boolean;
   onInspectCard?: (card: CardItem) => void;
+  onRemoveCard?: (id: string) => void;
 }
 
 export function CardTable({
@@ -24,9 +25,60 @@ export function CardTable({
   saveBatch,
   isSaved,
   onInspectCard,
+  onRemoveCard,
 }: CardTableProps) {
   const [selectedPreview, setSelectedPreview] = useState<CardItem | null>(null);
   const [saveBatchMessage, setSaveBatchMessage] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const displayedItems = useMemo(() => {
+    if (!searchTerm.trim()) return items;
+    const term = searchTerm.toLowerCase().trim();
+    const tokens = term.split(/\s+/).filter(Boolean);
+    const toStr = (val: any) => (val !== null && val !== undefined ? String(val).toLowerCase() : "");
+
+    return items.filter((item) => {
+      const card = item.data;
+      const prefix = toStr(item.prefix);
+      const title = toStr(card ? generateCdpTitle(card) : "");
+      const player = toStr(card?.playerName || (card as any)?.subject || (card as any)?.player);
+      const brand = toStr(card?.brand);
+      const set = toStr(card?.setName);
+      const num = toStr(card?.cardNumber);
+      const cleanNum = num.replace(/#/g, "");
+      const team = toStr(card?.team);
+
+      const fullText = `${prefix} ${title} ${player} ${brand} ${set} ${num} ${cleanNum} #${cleanNum} ${team}`;
+      return tokens.every((token) => {
+        const cleanToken = token.replace(/^[#]/, "");
+        return fullText.includes(token) || (cleanToken.length > 0 && fullText.includes(cleanToken));
+      });
+    });
+  }, [items, searchTerm]);
+
+  const batchAiStats = useMemo(() => {
+    let totalCost = 0;
+    let totalTokens = 0;
+    let cardsWithCost = 0;
+
+    items.forEach((item) => {
+      const usage = item.aiUsage || (item.data as any)?.aiUsage;
+      if (usage) {
+        totalCost += usage.costUsd || 0;
+        totalTokens += usage.totalTokens || 0;
+        cardsWithCost++;
+      }
+    });
+
+    const avgCostPerCard = cardsWithCost > 0 ? totalCost / cardsWithCost : 0;
+
+    return {
+      totalCost,
+      totalTokens,
+      cardsWithCost,
+      avgCostPerCard,
+    };
+  }, [items]);
 
   const handleUpdateField = (id: string, field: keyof CDPCardSchema, value: any) => {
     setItems((prev) =>
@@ -37,7 +89,7 @@ export function CardTable({
           brand: "",
           setName: "",
           cardNumber: "",
-          subsetParallel: "Base",
+          subsetParallel: "",
           team: "",
           sport: "",
           year: new Date().getFullYear(),
@@ -59,7 +111,11 @@ export function CardTable({
   };
 
   const handleRemove = (id: string) => {
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    if (onRemoveCard) {
+      onRemoveCard(id);
+    } else {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    }
   };
 
   const handleSaveBatchAll = async () => {
@@ -81,19 +137,59 @@ export function CardTable({
         <div>
           <div className="flex items-center gap-2">
             <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-ping"></span>
-            <h2 className="text-lg font-extrabold text-white flex items-center gap-2">
-              📥 Batch Upload Staging Queue
+            <h2 className="text-lg font-extrabold text-white flex items-center gap-2 flex-wrap">
+              <span>📥 Batch Upload Staging Queue</span>
               <span className="rounded-full bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-0.5 text-xs font-mono font-bold text-cyan-300">
                 {items.length} Card{items.length === 1 ? "" : "s"} Staged
               </span>
+              {batchAiStats.cardsWithCost > 0 && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-0.5 text-xs font-mono font-bold text-emerald-400 shadow-sm"
+                  title={`${batchAiStats.cardsWithCost} cards identified with Gemini 3.5 Flash-Lite | Total Tokens: ${batchAiStats.totalTokens.toLocaleString()}`}
+                >
+                  <Zap className="h-3 w-3 fill-emerald-400 text-emerald-400" />
+                  <span>
+                    Batch Cost: ${batchAiStats.totalCost < 0.01 ? batchAiStats.totalCost.toFixed(4) : batchAiStats.totalCost.toFixed(3)}
+                  </span>
+                  <span className="text-slate-400 text-[10px]">
+                    (avg ${batchAiStats.avgCostPerCard.toFixed(4)}/card)
+                  </span>
+                </span>
+              )}
             </h2>
           </div>
           <p className="text-xs text-slate-300 mt-1">
-            Review and approve your uploads here before clicking <strong className="text-cyan-300">"Add to Collection"</strong>. All metadata can be edited prior to final save.
+            Review and approve your uploads here before clicking <strong className="text-cyan-300">&quot;Add to Collection&quot;</strong>. All metadata can be edited prior to final save.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Staging Search Input */}
+          <div className="relative min-w-[220px]">
+            <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Filter staged cards..."
+              className="w-full pl-8 pr-7 py-2 bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-xl text-xs font-mono text-slate-100 outline-none"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2 top-2 p-0.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                title="Clear search"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+
           {saveBatchMessage && (
             <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl animate-fade-in">
               ✓ {saveBatchMessage}
@@ -143,7 +239,21 @@ export function CardTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/60 font-sans">
-            {items.map((item) => {
+            {displayedItems.length === 0 ? (
+              <tr>
+                <td colSpan={15} className="p-8 text-center text-slate-400 font-mono text-xs">
+                  No staged cards match &quot;{searchTerm}&quot;.
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="ml-2 text-cyan-400 hover:underline"
+                  >
+                    Clear filter
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              displayedItems.map((item) => {
               const d = item.data || {
                 playerName: "",
                 brand: "",
@@ -191,9 +301,23 @@ export function CardTable({
                     </div>
                   </td>
 
-                  {/* Prefix ID */}
+                  {/* Prefix ID & AI Cost */}
                   <td className="p-2 font-mono font-semibold text-slate-300 text-[11px]">
-                    {item.prefix}
+                    <div>{item.prefix}</div>
+                    {(item.aiUsage || (item.data as any)?.aiUsage) && (
+                      <div
+                        className="text-[9px] font-mono font-bold text-emerald-400 bg-emerald-950/70 border border-emerald-500/30 px-1.5 py-0.5 rounded inline-flex items-center gap-1 mt-1 shadow-sm"
+                        title={`Model: ${(item.aiUsage || (item.data as any)?.aiUsage).model} | Prompt: ${(item.aiUsage || (item.data as any)?.aiUsage).promptTokens} tok | Output: ${(item.aiUsage || (item.data as any)?.aiUsage).outputTokens} tok | Total: ${(item.aiUsage || (item.data as any)?.aiUsage).totalTokens} tok`}
+                      >
+                        <span className="text-amber-300">⚡</span>
+                        <span>
+                          ${(item.aiUsage || (item.data as any)?.aiUsage).costUsd < 0.001
+                            ? (item.aiUsage || (item.data as any)?.aiUsage).costUsd.toFixed(4)
+                            : (item.aiUsage || (item.data as any)?.aiUsage).costUsd.toFixed(3)}
+                        </span>
+                        <span className="text-slate-400 text-[8px]">({(item.aiUsage || (item.data as any)?.aiUsage).totalTokens}t)</span>
+                      </div>
+                    )}
                   </td>
 
                   {/* CDP Title */}
@@ -407,8 +531,9 @@ export function CardTable({
                   </td>
                 </tr>
               );
-            })}
-          </tbody>
+            })
+          )}
+        </tbody>
         </table>
       </div>
 

@@ -9,9 +9,19 @@ interface FileDropzoneProps {
   onIdentifyBatch: () => void;
   isProcessing: boolean;
   onOpenQrScanner?: () => void;
+  onClearAll?: () => void;
+  onRemoveCard?: (id: string) => void;
 }
 
-export function FileDropzone({ items, setItems, onIdentifyBatch, isProcessing, onOpenQrScanner }: FileDropzoneProps) {
+export function FileDropzone({
+  items,
+  setItems,
+  onIdentifyBatch,
+  isProcessing,
+  onOpenQrScanner,
+  onClearAll,
+  onRemoveCard,
+}: FileDropzoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraFrontInputRef = useRef<HTMLInputElement>(null);
   const cameraBackInputRef = useRef<HTMLInputElement>(null);
@@ -353,7 +363,7 @@ export function FileDropzone({ items, setItems, onIdentifyBatch, isProcessing, o
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setItems([])}
+                onClick={onClearAll ? onClearAll : () => setItems([])}
                 disabled={isProcessing}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/60 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-slate-600 hover:bg-slate-700 transition disabled:opacity-50"
               >
@@ -420,7 +430,13 @@ export function FileDropzone({ items, setItems, onIdentifyBatch, isProcessing, o
                     </button>
                   )}
                   <button
-                    onClick={() => handleRemoveCard(item.id)}
+                    onClick={() => {
+                      if (onRemoveCard) {
+                        onRemoveCard(item.id);
+                      } else {
+                        handleRemoveCard(item.id);
+                      }
+                    }}
                     title="Remove Card"
                     className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition"
                   >

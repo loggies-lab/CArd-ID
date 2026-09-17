@@ -1,4 +1,4 @@
-export function generateCdpTitle(card: {
+export function generateCdpTitle(card?: {
   year?: number | string;
   setName?: string;
   brand?: string;
@@ -10,7 +10,8 @@ export function generateCdpTitle(card: {
   isMemorabilia?: boolean;
   isNumbered?: boolean;
   numberedTo?: string | number;
-}): string {
+} | null): string {
+  if (!card) return '';
   const parts: string[] = [];
 
   const yearStr = card.year ? String(card.year).trim() : '';

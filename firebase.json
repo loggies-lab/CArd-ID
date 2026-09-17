@@ -23,11 +23,29 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "**/*.@(html|js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ],
     "rewrites": [
       {
         "source": "/identifyCard",
         "function": {
           "functionId": "identifyCard",
+          "region": "us-central1"
+        }
+      },
+      {
+        "source": "/api/ebay-comps",
+        "function": {
+          "functionId": "getEbayComps",
           "region": "us-central1"
         }
       },

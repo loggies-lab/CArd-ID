@@ -2,20 +2,39 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Sparkles, Key, CheckCircle, Cpu, Layers, BookmarkCheck, Award, Tag, Sliders, X, LogOut, Smartphone } from "lucide-react";
+import {
+  Sparkles,
+  Key,
+  CheckCircle,
+  Cpu,
+  Layers,
+  BookmarkCheck,
+  Award,
+  Tag,
+  Sliders,
+  X,
+  LogOut,
+  Smartphone,
+  Shield,
+  Crown,
+  Lock,
+} from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { isDefaultAdminEmail, updateUserAdminControls } from "@/lib/userProfile";
 
 interface HeaderBarProps {
   apiKey: string;
   setApiKey: (key: string) => void;
-  activeTab: "scanner" | "collection" | "ebay" | "grading";
-  setActiveTab: (tab: "scanner" | "collection" | "ebay" | "grading") => void;
+  activeTab: "scanner" | "collection" | "ebay" | "grading" | "admin";
+  setActiveTab: (tab: "scanner" | "collection" | "ebay" | "grading" | "admin") => void;
   savedCount: number;
   candidateCount?: number;
   ebayCandidateCount?: number;
   onOpenGradingSettings?: () => void;
+  onOpenUserProfile?: () => void;
   onOpenQrScanner?: () => void;
   onOpenAuthModal?: () => void;
+  onOpenPaywall?: () => void;
 }
 
 export function HeaderBar({
@@ -27,12 +46,17 @@ export function HeaderBar({
   candidateCount = 0,
   ebayCandidateCount = 0,
   onOpenGradingSettings,
+  onOpenUserProfile,
   onOpenQrScanner,
   onOpenAuthModal,
+  onOpenPaywall,
 }: HeaderBarProps) {
   const [showConfig, setShowConfig] = useState(false);
   const [tempKey, setTempKey] = useState(apiKey);
   const [mounted, setMounted] = useState(false);
+  const [showAdminPasscodeModal, setShowAdminPasscodeModal] = useState(false);
+  const [adminPasscode, setAdminPasscode] = useState("");
+  const [passcodeError, setPasscodeError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -82,7 +106,7 @@ export function HeaderBar({
               className="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl p-3 text-xs font-mono text-cyan-300 focus:outline-none shadow-inner"
             />
             <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
-              If set, requests will prioritize this API key for Gemini Vision AI. Get a free API key at{" "}
+              If set, requests will prioritize this API key for Gemini Vision AI. Manage your key and prepayment credits at{" "}
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
@@ -93,6 +117,23 @@ export function HeaderBar({
               </a>
               .
             </p>
+
+            {/* Pricing Telemetry Explainer */}
+            <div className="mt-3 p-3 rounded-xl bg-slate-900 border border-slate-800 text-[11px] space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-slate-300 font-bold">
+                <span className="text-cyan-400">⚡ Active AI Pipeline:</span>
+                <span>gemini-3.5-flash-lite</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-slate-400 pt-1 border-t border-slate-800 text-[10px]">
+                <div>• Input: $0.30 / 1M tokens</div>
+                <div>• Output: $2.50 / 1M tokens</div>
+                <div>• Thinking Budget: 0 tokens</div>
+                <div>• Avg Cost: ~$0.0006 / card</div>
+              </div>
+              <div className="text-[10px] text-emerald-400 pt-0.5">
+                ✓ Approx. 1,500 cards per $1.00 of AI credit
+              </div>
+            </div>
           </div>
         </div>
 
@@ -115,6 +156,96 @@ export function HeaderBar({
   );
 
   const { currentUser, userProfile, logout } = useAuth();
+  const isAdmin = userProfile?.role === "admin" || (currentUser?.email ? isDefaultAdminEmail(currentUser.email) : false);
+
+  const handleUnlockAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPasscode.trim().toLowerCase() === "cardid2026") {
+      if (currentUser?.uid) {
+        try {
+          await updateUserAdminControls(currentUser.uid, {
+            role: "admin",
+            subscriptionTier: "pro",
+            scansRemaining: 999999,
+          });
+          setActiveTab("admin");
+          setShowAdminPasscodeModal(false);
+          setAdminPasscode("");
+          setPasscodeError(null);
+        } catch (err: any) {
+          setPasscodeError(err.message || "Failed to elevate to admin");
+        }
+      } else {
+        setPasscodeError("Please log in first to enable Admin permissions.");
+      }
+    } else {
+      setPasscodeError("Incorrect passcode. Hint: check CardID Admin passkey.");
+    }
+  };
+
+  const adminModalContent = (
+    <div className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-slate-900 border border-purple-500/30 rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl relative">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+            <Shield className="h-5 w-5 text-purple-400" /> Unlock CardID Admin Portal
+          </h3>
+          <button
+            onClick={() => {
+              setShowAdminPasscodeModal(false);
+              setPasscodeError(null);
+            }}
+            className="text-slate-400 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800 transition"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <form onSubmit={handleUnlockAdmin} className="space-y-4">
+          <p className="text-xs text-slate-300">
+            Enter the master administrator passcode to elevate your current account to <strong>Admin & Pro</strong> and monitor user activity & revenue.
+          </p>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-200 mb-1">Master Passcode</label>
+            <input
+              type="password"
+              value={adminPasscode}
+              onChange={(e) => {
+                setAdminPasscode(e.target.value);
+                setPasscodeError(null);
+              }}
+              placeholder="Enter admin passcode (cardid2026)"
+              className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl p-3 text-sm text-white font-mono focus:outline-none shadow-inner"
+              autoFocus
+            />
+            {passcodeError && (
+              <p className="mt-2 text-xs text-rose-400 font-semibold">{passcodeError}</p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdminPasscodeModal(false);
+                setPasscodeError(null);
+              }}
+              className="px-4 py-2 rounded-xl border border-slate-800 text-xs font-bold text-slate-400 hover:bg-slate-800 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-xs font-bold text-white shadow-lg shadow-purple-500/20 transition active:scale-95"
+            >
+              Verify & Unlock
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
@@ -131,7 +262,7 @@ export function HeaderBar({
                 CardID <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">Pro</span>
               </h1>
               <p className="text-[11px] text-slate-400 hidden sm:block">
-                Powered by <code className="font-mono text-cyan-300">gemini-2.0-flash</code> Vision Pipeline
+                Powered by <code className="font-mono text-cyan-300">gemini-3.5-flash-lite</code> Vision Pipeline
               </p>
             </div>
           </div>
@@ -218,11 +349,44 @@ export function HeaderBar({
                 </span>
               )}
             </button>
+
+            {/* Admin Portal Tab */}
+            {isAdmin && (
+              <button
+                onClick={() => setActiveTab("admin")}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-all duration-200 ${
+                  activeTab === "admin"
+                    ? "bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-md shadow-purple-500/20"
+                    : "text-purple-400 hover:text-purple-200 hover:bg-slate-800/50"
+                }`}
+              >
+                <Shield className="h-3.5 w-3.5" />
+                <span>Admin Portal 🛡️</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Right Section: Rules, Key Options & Profile Avatar */}
+        {/* Right Section: Rules, Key Options, Upgrade Pill & Profile Avatar */}
         <div className="flex items-center gap-2.5">
+          {/* Paywall / Upgrade Pill */}
+          {onOpenPaywall && (
+            <button
+              onClick={onOpenPaywall}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:to-orange-400 px-3 py-1.5 text-xs font-extrabold text-white shadow-md shadow-orange-500/20 transition active:scale-95"
+              title="CardID Subscription & Upgrade Plans"
+            >
+              <Crown className="h-3.5 w-3.5" />
+              <span className="capitalize">
+                {userProfile?.subscriptionTier === "pro"
+                  ? "Pro Member"
+                  : userProfile?.subscriptionTier === "starter"
+                  ? "Starter Plan"
+                  : "Upgrade"}
+              </span>
+            </button>
+          )}
+
           {onOpenQrScanner && (
             <button
               onClick={onOpenQrScanner}
@@ -237,9 +401,9 @@ export function HeaderBar({
             <button
               onClick={onOpenGradingSettings}
               className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition"
-              title="Grading ROI & Threshold Rules"
+              title="User Settings (Grading Rules, Selling Fees & Triage Cutoffs)"
             >
-              <Sliders className="h-3.5 w-3.5 text-amber-400" /> Rules
+              <Sliders className="h-3.5 w-3.5 text-amber-400" /> Settings
             </button>
           )}
 
@@ -250,25 +414,38 @@ export function HeaderBar({
             <Key className="h-3.5 w-3.5 text-cyan-400" /> Key Options
           </button>
 
+          {/* Discreet Admin Lock Button for Non-Admins */}
+          {!isAdmin && currentUser && (
+            <button
+              onClick={() => setShowAdminPasscodeModal(true)}
+              className="p-2 rounded-xl border border-slate-800 text-slate-500 hover:text-purple-400 hover:border-purple-500/40 hover:bg-purple-500/10 transition"
+              title="Unlock CardID Admin Portal with Passcode"
+            >
+              <Lock className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {/* User Profile Avatar Section */}
           {currentUser && (
             <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
-              <div
-                className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-1.5 text-xs shadow-sm"
-                title={`Logged in as ${currentUser.email}`}
+              <button
+                onClick={onOpenUserProfile || onOpenGradingSettings}
+                className="flex items-center gap-2.5 bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800/80 rounded-xl px-3 py-1.5 text-xs shadow-sm transition active:scale-95 group cursor-pointer"
+                title="Click to view & edit your account profile & grading rules"
               >
-                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center text-xs font-bold uppercase shadow-sm">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 via-purple-600 to-amber-500 text-white flex items-center justify-center text-xs font-bold uppercase shadow-sm group-hover:ring-2 group-hover:ring-amber-400">
                   {currentUser.email ? currentUser.email[0] : "U"}
                 </div>
                 <div className="hidden md:block text-left leading-none">
-                  <div className="text-[11px] font-semibold text-slate-200 max-w-[120px] truncate">
+                  <div className="text-[11px] font-semibold text-slate-200 max-w-[120px] truncate group-hover:text-amber-300">
                     {currentUser.email?.split("@")[0]}
                   </div>
-                  <div className="text-[9px] font-mono text-indigo-400 uppercase tracking-wider mt-0.5">
-                    {userProfile?.subscriptionTier || "free"} tier
+                  <div className="text-[9px] font-mono text-amber-400 font-bold uppercase tracking-wider mt-0.5 flex items-center gap-1">
+                    <span>{userProfile?.subscriptionTier || "free"} tier</span>
+                    <span className="text-slate-400 font-normal">⚙️ Profile</span>
                   </div>
                 </div>
-              </div>
+              </button>
 
               <button
                 onClick={() => logout()}
@@ -283,6 +460,7 @@ export function HeaderBar({
       </div>
 
       {showConfig && mounted && createPortal(modalContent, document.body)}
+      {showAdminPasscodeModal && mounted && createPortal(adminModalContent, document.body)}
     </header>
   );
 }

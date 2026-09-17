@@ -48,6 +48,7 @@ export function exportSavedCollectionToCSV(items: SavedCollectionItem[], customF
     const card = item.data;
     return {
       "Prefix / ID": item.prefix,
+      "Batch Name": item.batchName || "",
       "Card Number": card.cardNumber || "",
       "Player Name": card.playerName || "",
       "Set Name": card.setName || "",

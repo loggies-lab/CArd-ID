@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { SavedCollectionItem, CardItem, CDPCardSchema } from "@/types/card";
+import { SavedCollectionItem, CardItem, CDPCardSchema, UserSettings } from "@/types/card";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
+import { calculateEbayNetProceeds } from "@/lib/userSettings";
 import {
   Tag,
   Sparkles,
@@ -22,15 +23,19 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Sliders,
+  X,
 } from "lucide-react";
 
 interface EbayCandidatesTabProps {
   savedCards: SavedCollectionItem[];
   scannerItems?: CardItem[];
   minEbayThreshold?: number;
+  settings?: UserSettings;
   onInspectCard?: (card: SavedCollectionItem) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
   onNavigateToGrading?: () => void;
+  onOpenSettings?: () => void;
 }
 
 type SortField = "price" | "title" | "player" | "year";
@@ -38,10 +43,17 @@ type SortField = "price" | "title" | "player" | "year";
 export function EbayCandidatesTab({
   savedCards,
   minEbayThreshold = 4.0,
+  settings,
   onInspectCard,
   updateSavedCardDataBatch,
   onNavigateToGrading,
+  onOpenSettings,
 }: EbayCandidatesTabProps) {
+  const activeMinRaw = settings?.minEbayRawThreshold ?? minEbayThreshold ?? 4.0;
+  const ebayFeePct = settings?.ebayFeePct ?? 13.25;
+  const ebayFixedFee = settings?.ebayFixedFee ?? 0.30;
+  const standardEnvelopeCost = settings?.standardEnvelopeCost ?? 1.00;
+
   const [searchTerm, setSearchTerm] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -56,18 +68,20 @@ export function EbayCandidatesTab({
   const [isBulkRunning, setIsBulkRunning] = useState(false);
   const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number; currentTitle: string } | null>(null);
 
-  // Split collection into eBay Singles (>= $4.00) vs Bulk Lot ($1.00 - $3.99)
-  const { ebayCandidates, bulkLotCards, totalEbayValue, totalBulkValue } = useMemo(() => {
+  // Split collection into eBay Singles (>= activeMinRaw) vs Bulk Lot ($1.00 - activeMinRaw)
+  const { ebayCandidates, bulkLotCards, totalEbayValue, totalEbayNetValue, totalBulkValue } = useMemo(() => {
     const ebayList: SavedCollectionItem[] = [];
     const bulkList: SavedCollectionItem[] = [];
     let ebaySum = 0;
+    let ebayNetSum = 0;
     let bulkSum = 0;
 
     savedCards.forEach((card) => {
       const val = card.data.estimatedValue || 0;
-      if (val >= minEbayThreshold) {
+      if (val >= activeMinRaw) {
         ebayList.push(card);
         ebaySum += val;
+        ebayNetSum += calculateEbayNetProceeds(val, settings);
       } else {
         bulkList.push(card);
         bulkSum += val;
@@ -78,24 +92,35 @@ export function EbayCandidatesTab({
       ebayCandidates: ebayList,
       bulkLotCards: bulkList,
       totalEbayValue: ebaySum,
+      totalEbayNetValue: ebayNetSum,
       totalBulkValue: bulkSum,
     };
-  }, [savedCards, minEbayThreshold]);
+  }, [savedCards, activeMinRaw, settings]);
 
   // Filtered & Sorted eBay Candidates list
   const filteredCandidates = useMemo(() => {
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.toLowerCase().trim();
+    const searchTokens = term.split(/\s+/).filter(Boolean);
+
+    const toStr = (val: any): string => (val !== null && val !== undefined ? String(val).toLowerCase() : "");
+
     const list = ebayCandidates.filter((item) => {
       const card = item.data;
-      return (
-        !searchTerm ||
-        card.playerName.toLowerCase().includes(term) ||
-        card.brand.toLowerCase().includes(term) ||
-        card.setName.toLowerCase().includes(term) ||
-        card.team.toLowerCase().includes(term) ||
-        card.cardNumber.toLowerCase().includes(term) ||
-        item.prefix.toLowerCase().includes(term)
-      );
+      if (!card) return false;
+
+      const playerName = toStr(card.playerName || (card as any).subject || (card as any).player);
+      const brand = toStr(card.brand);
+      const setName = toStr(card.setName);
+      const team = toStr(card.team);
+      const cardNumber = toStr(card.cardNumber);
+      const subsetParallel = toStr(card.subsetParallel);
+      const sport = toStr(card.sport);
+      const year = toStr(card.year);
+      const prefix = toStr(item.prefix);
+      const fullTitle = toStr(generateCdpTitle(card));
+
+      const searchableText = `${fullTitle} ${playerName} ${brand} ${setName} ${team} ${cardNumber} ${subsetParallel} ${sport} ${year} ${prefix}`;
+      return searchTokens.length === 0 || searchTokens.every((token) => searchableText.includes(token));
     });
 
     return list.sort((a, b) => {
@@ -197,11 +222,19 @@ export function EbayCandidatesTab({
         <div className="relative z-10 space-y-3 max-w-3xl">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 text-xs font-mono font-bold text-indigo-300">
-              <Tag className="h-3.5 w-3.5 text-indigo-400" /> eBay Singles Candidates (≥ ${minEbayThreshold.toFixed(2)})
+              <Tag className="h-3.5 w-3.5 text-indigo-400" /> eBay Singles Candidates (≥ ${activeMinRaw.toFixed(2)})
             </span>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 px-3 py-1 text-xs font-mono font-bold text-amber-300">
-              <PackageX className="h-3.5 w-3.5 text-amber-400" /> Bulk Lot Filter ($1 – ${(minEbayThreshold - 0.01).toFixed(2)})
+              <PackageX className="h-3.5 w-3.5 text-amber-400" /> Bulk Lot Filter ($1 – ${(activeMinRaw - 0.01).toFixed(2)})
             </span>
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 px-3 py-1 text-xs font-mono font-bold text-slate-300 transition shadow"
+              >
+                <Sliders className="h-3.5 w-3.5 text-amber-400" /> Settings ({ebayFeePct}% + ${ebayFixedFee.toFixed(2)})
+              </button>
+            )}
           </div>
 
           <h2 className="text-3xl font-black text-white tracking-tight">
@@ -209,7 +242,7 @@ export function EbayCandidatesTab({
           </h2>
 
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-            Separate low-value bulk cards ($1–$4) from profitable single listings. Cards valued at <strong className="text-indigo-400">≥ ${minEbayThreshold.toFixed(2)}</strong> are pre-filtered here so you can generate listing titles, run comps, and audit for PSA grading potential.
+            Separate low-value bulk cards ($1–$4) from profitable single listings. Cards valued at <strong className="text-indigo-400">≥ ${activeMinRaw.toFixed(2)}</strong> are pre-filtered here so you can generate listing titles, run comps, and calculate real net payouts.
           </p>
         </div>
       </div>
@@ -220,7 +253,7 @@ export function EbayCandidatesTab({
         <div className="rounded-2xl border border-indigo-500/30 bg-slate-900/80 p-5 backdrop-blur-xl space-y-2 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
-              eBay Singles (≥ ${minEbayThreshold.toFixed(2)})
+              eBay Singles (≥ ${activeMinRaw.toFixed(2)})
             </span>
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
               <Tag className="h-4 w-4" />
@@ -228,16 +261,21 @@ export function EbayCandidatesTab({
           </div>
           <div className="flex items-baseline justify-between">
             <span className="text-2xl font-black text-white font-mono">{ebayCandidates.length} cards</span>
-            <span className="text-xs font-bold text-indigo-300 font-mono">${totalEbayValue.toFixed(2)}</span>
+            <div className="text-right">
+              <span className="text-xs font-bold text-indigo-300 font-mono block">${totalEbayValue.toFixed(2)} Gross</span>
+              <span className="text-[11px] font-bold text-emerald-400 font-mono block">~${totalEbayNetValue.toFixed(2)} Net</span>
+            </div>
           </div>
-          <p className="text-[11px] text-slate-400">Profitable for individual online listing.</p>
+          <p className="text-[11px] text-slate-400">
+            Net after {ebayFeePct}% fee + ${ebayFixedFee.toFixed(2)} + ${standardEnvelopeCost.toFixed(2)} envelope.
+          </p>
         </div>
 
         {/* Bulk Lot Stat */}
         <div className="rounded-2xl border border-amber-500/30 bg-slate-900/80 p-5 backdrop-blur-xl space-y-2 shadow-xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono font-bold text-slate-400 uppercase tracking-wider">
-              Bulk Lot Box ($1 – ${(minEbayThreshold - 0.01).toFixed(2)})
+              Bulk Lot Box ($1 – ${(activeMinRaw - 0.01).toFixed(2)})
             </span>
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
               <PackageX className="h-4 w-4" />
@@ -300,14 +338,28 @@ export function EbayCandidatesTab({
       <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 backdrop-blur-xl space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search eBay candidates by player, set, team..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl text-xs font-mono text-slate-100 outline-none"
+              className="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl text-xs font-mono text-slate-100 outline-none"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2.5 top-2.5 p-0.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -338,7 +390,7 @@ export function EbayCandidatesTab({
           <Tag className="h-10 w-10 text-slate-600 mx-auto" />
           <h3 className="text-base font-bold text-slate-300">No eBay Singles Candidates Found</h3>
           <p className="text-xs text-slate-500 max-w-md mx-auto">
-            All current cards in your collection are priced under ${minEbayThreshold.toFixed(2)} (or haven't had comps run yet). Run comps in My Collection to identify your $4+ single listings!
+            All current cards in your collection are priced under ${activeMinRaw.toFixed(2)} (or haven&apos;t had comps run yet). Run comps in My Collection to identify your ${activeMinRaw.toFixed(2)}+ single listings!
           </p>
         </div>
       ) : (
@@ -356,7 +408,7 @@ export function EbayCandidatesTab({
                 </th>
                 <th className="px-4 py-3">Card</th>
                 <th className="px-4 py-3">Generated eBay Listing Title</th>
-                <th className="px-4 py-3 text-right">Est. Raw Value</th>
+                <th className="px-4 py-3 text-right">Est. Raw / Net</th>
                 <th className="px-4 py-3 text-center">PSA 10 ROI</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -425,8 +477,14 @@ export function EbayCandidatesTab({
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 text-right font-mono font-bold text-indigo-400 text-sm">
-                      ${val.toFixed(2)}
+                    <td className="px-4 py-3 text-right font-mono">
+                      <div className="font-bold text-indigo-400 text-sm">${val.toFixed(2)}</div>
+                      <div
+                        className="text-[10px] text-emerald-400 font-semibold"
+                        title={`Net after ${ebayFeePct}% eBay fee, $${ebayFixedFee.toFixed(2)} fixed fee, and $${standardEnvelopeCost.toFixed(2)} envelope`}
+                      >
+                        Net: ~${calculateEbayNetProceeds(val, settings).toFixed(2)}
+                      </div>
                     </td>
 
                     <td className="px-4 py-3 text-center font-mono text-xs">

@@ -186,13 +186,14 @@ export function useCollection() {
       backPreview,
       dateAdded: new Date().toISOString(),
       data: item.data,
+      aiUsage: item.aiUsage || item.data?.aiUsage,
     };
 
     if (uid) {
       try {
         await setDoc(doc(db, "users", uid, "cards", newItem.id), newItem);
-      } catch (e) {
-        console.error("Failed to save card to user Firestore collection:", e);
+      } catch (err) {
+        console.error("Failed to save single card to Firestore:", err);
       }
     }
 
@@ -201,8 +202,10 @@ export function useCollection() {
     return true;
   };
 
-  const saveBatch = async (items: CardItem[]): Promise<number> => {
-    const validItems = items.filter((item) => item.data && !savedCards.some((c) => c.id === item.id));
+  const saveBatch = async (itemsToSave: CardItem[]): Promise<number> => {
+    const validItems = itemsToSave.filter(
+      (i) => i.data && !savedCards.some((c) => c.id === i.id)
+    );
 
     if (validItems.length === 0) return 0;
 
@@ -219,25 +222,39 @@ export function useCollection() {
           backPreview,
           dateAdded: new Date().toISOString(),
           data: item.data!,
+          aiUsage: item.aiUsage || item.data?.aiUsage,
         };
       })
     );
 
+    const successfullySavedItems: SavedCollectionItem[] = [];
+
     if (uid) {
-      try {
-        const batch = writeBatch(db);
-        newSavedItems.forEach((savedItem) => {
-          batch.set(doc(db, "users", uid, "cards", savedItem.id), savedItem);
-        });
-        await batch.commit();
-      } catch (e) {
-        console.error("Failed to save card batch to user Firestore collection:", e);
+      // Chunk writes into safe batches of 25 cards (approx 1MB-1.5MB total, safely under Firestore 10MB batch limit and 500 operations limit)
+      const CHUNK_SIZE = 25;
+      for (let i = 0; i < newSavedItems.length; i += CHUNK_SIZE) {
+        const chunk = newSavedItems.slice(i, i + CHUNK_SIZE);
+        try {
+          const batch = writeBatch(db);
+          chunk.forEach((savedItem) => {
+            batch.set(doc(db, "users", uid, "cards", savedItem.id), savedItem);
+          });
+          await batch.commit();
+          successfullySavedItems.push(...chunk);
+        } catch (e) {
+          console.error(`Failed to save card batch chunk (${i} to ${i + chunk.length}) to Firestore:`, e);
+        }
       }
+    } else {
+      successfullySavedItems.push(...newSavedItems);
     }
 
-    const updated = [...newSavedItems, ...savedCards];
-    updateLocalCache(updated);
-    return newSavedItems.length;
+    if (successfullySavedItems.length > 0) {
+      const updated = [...successfullySavedItems, ...savedCards];
+      updateLocalCache(updated);
+    }
+
+    return successfullySavedItems.length;
   };
 
   const removeCard = async (id: string) => {
@@ -255,14 +272,19 @@ export function useCollection() {
 
   const clearCollection = async () => {
     if (uid) {
-      try {
-        const batch = writeBatch(db);
-        savedCards.forEach((c) => {
-          batch.delete(doc(db, "users", uid, "cards", c.id));
-        });
-        await batch.commit();
-      } catch (e) {
-        console.error("Failed to clear user Firestore collection:", e);
+      // Deletes don't have large payload sizes, but Firestore limits batches to at most 500 operations
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < savedCards.length; i += CHUNK_SIZE) {
+        const chunk = savedCards.slice(i, i + CHUNK_SIZE);
+        try {
+          const batch = writeBatch(db);
+          chunk.forEach((c) => {
+            batch.delete(doc(db, "users", uid, "cards", c.id));
+          });
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to clear user Firestore collection chunk:", e);
+        }
       }
     }
 
@@ -296,21 +318,75 @@ export function useCollection() {
     });
 
     if (uid) {
-      try {
-        const batch = writeBatch(db);
-        updates.forEach(({ id, data }) => {
-          const existing = savedCards.find((c) => c.id === id);
-          if (existing) {
-            batch.set(doc(db, "users", uid, "cards", id), { ...existing, data });
-          }
-        });
-        await batch.commit();
-      } catch (e) {
-        console.error("Failed to update batch in user Firestore collection:", e);
+      const CHUNK_SIZE = 25;
+      for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
+        const chunk = updates.slice(i, i + CHUNK_SIZE);
+        try {
+          const batch = writeBatch(db);
+          chunk.forEach(({ id, data }) => {
+            const existing = savedCards.find((c) => c.id === id);
+            if (existing) {
+              batch.set(doc(db, "users", uid, "cards", id), { ...existing, data });
+            }
+          });
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to update batch chunk in user Firestore collection:", e);
+        }
       }
     }
 
     updateLocalCache(updated);
+  };
+
+  const renameBatch = async (batchId: string, newBatchName: string): Promise<boolean> => {
+    const trimmed = newBatchName.trim();
+    if (!trimmed) return false;
+
+    // Match all cards belonging to this batch (including legacy items where batchId is missing)
+    const targetCards = savedCards.filter(
+      (c) => (c.batchId || "legacy_batch") === batchId
+    );
+    if (targetCards.length === 0) return false;
+
+    // Optimistically update local collection state & cache
+    const updated = savedCards.map((c) => {
+      if ((c.batchId || "legacy_batch") === batchId) {
+        return {
+          ...c,
+          batchId: c.batchId || batchId,
+          batchName: trimmed,
+        };
+      }
+      return c;
+    });
+    updateLocalCache(updated);
+
+    // Persist to Cloud Firestore using lightweight field merge (avoids re-uploading large image previews)
+    if (uid) {
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < targetCards.length; i += CHUNK_SIZE) {
+        const chunk = targetCards.slice(i, i + CHUNK_SIZE);
+        try {
+          const batch = writeBatch(db);
+          chunk.forEach((c) => {
+            batch.set(
+              doc(db, "users", uid, "cards", c.id),
+              {
+                batchId: c.batchId || batchId,
+                batchName: trimmed,
+              },
+              { merge: true }
+            );
+          });
+          await batch.commit();
+        } catch (e) {
+          console.error("Failed to rename batch chunk in Firestore:", e);
+        }
+      }
+    }
+
+    return true;
   };
 
   const isSaved = (id: string) => {
@@ -324,8 +400,10 @@ export function useCollection() {
     saveBatch,
     updateSavedCardData,
     updateSavedCardDataBatch,
+    renameBatch,
     removeCard,
     clearCollection,
     isSaved,
   };
 }
+

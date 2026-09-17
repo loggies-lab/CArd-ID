@@ -1,9 +1,18 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { SavedCollectionItem, CDPCardSchema } from "@/types/card";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
+import { useAuth } from "@/context/AuthContext";
+import { PortfolioChart } from "@/components/PortfolioChart";
+import { GainersFallersWidget } from "@/components/GainersFallersWidget";
+import { PortfolioSnapshot } from "@/types/portfolio";
+import {
+  getPortfolioSnapshots,
+  recordPortfolioSnapshot,
+  computeGainersAndFallers,
+} from "@/lib/portfolioHistory";
 import {
   Search,
   Download,
@@ -29,6 +38,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Edit3,
+  Check,
 } from "lucide-react";
 
 interface CollectionTabProps {
@@ -37,6 +48,7 @@ interface CollectionTabProps {
   clearCollection: () => void;
   onInspectCard?: (card: SavedCollectionItem) => void;
   updateSavedCardDataBatch?: (updates: { id: string; data: CDPCardSchema }[]) => void;
+  renameBatch?: (batchId: string, newBatchName: string) => Promise<boolean>;
 }
 
 type SortField = "price" | "dateAdded" | "title" | "player" | "year";
@@ -47,7 +59,9 @@ export function CollectionTab({
   clearCollection,
   onInspectCard,
   updateSavedCardDataBatch,
+  renameBatch,
 }: CollectionTabProps) {
+  const { currentUser } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSport, setSelectedSport] = useState("all");
   const [selectedBatchId, setSelectedBatchId] = useState<string>("all");
@@ -57,12 +71,46 @@ export function CollectionTab({
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
+  // Portfolio snapshots for Robinhood graph
+  const [snapshots, setSnapshots] = useState<PortfolioSnapshot[]>([]);
+  const [isRefreshingMarket, setIsRefreshingMarket] = useState(false);
+
+  useEffect(() => {
+    getPortfolioSnapshots(currentUser?.uid).then((snaps) => {
+      setSnapshots(snaps);
+    });
+  }, [currentUser?.uid]);
+
   // Sorting State (Default: Highest Price First!)
   const [sortBy, setSortBy] = useState<SortField>("price");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-  // Multi-select Checkbox State
+  // Multi-select & Range selection state
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+  const [isTabHeld, setIsTabHeld] = useState(false);
+
+  // Keydown / Keyup listener to track Tab / Shift modifier keys for multi-selection
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        setIsTabHeld(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Tab") {
+        setIsTabHeld(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
 
   // Bulk Comps Execution State
   const [isBulkRunning, setIsBulkRunning] = useState(false);
@@ -74,6 +122,43 @@ export function CollectionTab({
     pricedCount: number;
   } | null>(null);
   const [bulkSummaryMessage, setBulkSummaryMessage] = useState<string | null>(null);
+
+  // Batch Rename Modal & Notification State
+  const [renamingBatch, setRenamingBatch] = useState<{
+    batchId: string;
+    currentName: string;
+    count: number;
+  } | null>(null);
+  const [renameInputVal, setRenameInputVal] = useState("");
+  const [isRenamingSubmitting, setIsRenamingSubmitting] = useState(false);
+  const [renameNotice, setRenameNotice] = useState<string | null>(null);
+
+  const handleOpenRename = (batchId: string, currentName: string, count: number) => {
+    setRenamingBatch({ batchId, currentName, count });
+    setRenameInputVal(currentName);
+  };
+
+  const handleConfirmRename = async () => {
+    if (!renamingBatch || !renameInputVal.trim() || !renameBatch) return;
+    const newName = renameInputVal.trim();
+    if (newName === renamingBatch.currentName) {
+      setRenamingBatch(null);
+      return;
+    }
+    setIsRenamingSubmitting(true);
+    try {
+      const ok = await renameBatch(renamingBatch.batchId, newName);
+      if (ok) {
+        setRenameNotice(`Batch successfully renamed to "${newName}"`);
+        setTimeout(() => setRenameNotice(null), 3500);
+      }
+      setRenamingBatch(null);
+    } catch (err) {
+      console.error("Failed to rename batch:", err);
+    } finally {
+      setIsRenamingSubmitting(false);
+    }
+  };
 
   // Statistics calculation including Total Portfolio Worth
   const stats = useMemo(() => {
@@ -137,20 +222,36 @@ export function CollectionTab({
 
   // Filtered and Sorted collection list
   const filteredCards = useMemo(() => {
+    const term = searchTerm.toLowerCase().trim();
+    const searchTokens = term.split(/\s+/).filter(Boolean);
+
+    const toStr = (val: any): string => (val !== null && val !== undefined ? String(val).toLowerCase() : "");
+
     const filtered = savedCards.filter((item) => {
       const card = item.data;
-      const term = searchTerm.toLowerCase();
+      if (!card) return false;
 
+      const playerName = toStr(card.playerName || (card as any).subject || (card as any).player);
+      const brand = toStr(card.brand);
+      const setName = toStr(card.setName);
+      const team = toStr(card.team);
+      const cardNumber = toStr(card.cardNumber);
+      const cleanNum = cardNumber.replace(/#/g, "");
+      const subsetParallel = toStr(card.subsetParallel);
+      const sport = toStr(card.sport);
+      const year = toStr(card.year);
+      const prefix = toStr(item.prefix);
+      const fullTitle = toStr(generateCdpTitle(card));
+
+      const searchableText = `${fullTitle} ${playerName} ${brand} ${setName} ${team} ${cardNumber} ${cleanNum} #${cleanNum} ${subsetParallel} ${sport} ${year} ${prefix}`;
       const matchesSearch =
-        !searchTerm ||
-        card.playerName.toLowerCase().includes(term) ||
-        card.brand.toLowerCase().includes(term) ||
-        card.setName.toLowerCase().includes(term) ||
-        card.team.toLowerCase().includes(term) ||
-        card.cardNumber.toLowerCase().includes(term) ||
-        item.prefix.toLowerCase().includes(term);
+        searchTokens.length === 0 ||
+        searchTokens.every((token) => {
+          const cleanToken = token.replace(/^[#]/, "");
+          return searchableText.includes(token) || (cleanToken.length > 0 && searchableText.includes(cleanToken));
+        });
 
-      const matchesSport = selectedSport === "all" || card.sport.toLowerCase() === selectedSport.toLowerCase();
+      const matchesSport = selectedSport === "all" || sport === selectedSport.toLowerCase();
       const matchesBatch =
         selectedBatchId === "all" ||
         item.batchId === selectedBatchId ||
@@ -167,15 +268,15 @@ export function CollectionTab({
       let comparison = 0;
 
       if (sortBy === "price") {
-        const valA = a.data.estimatedValue || 0;
-        const valB = b.data.estimatedValue || 0;
+        const valA = a.data?.estimatedValue || 0;
+        const valB = b.data?.estimatedValue || 0;
         comparison = valA - valB;
       } else if (sortBy === "player") {
-        comparison = (a.data.playerName || "").localeCompare(b.data.playerName || "");
+        comparison = (a.data?.playerName || "").localeCompare(b.data?.playerName || "");
       } else if (sortBy === "title") {
         comparison = generateCdpTitle(a.data).localeCompare(generateCdpTitle(b.data));
       } else if (sortBy === "year") {
-        comparison = (a.data.year || 0) - (b.data.year || 0);
+        comparison = (a.data?.year || 0) - (b.data?.year || 0);
       } else if (sortBy === "dateAdded") {
         comparison = new Date(a.dateAdded).getTime() - new Date(b.dateAdded).getTime();
       }
@@ -183,6 +284,36 @@ export function CollectionTab({
       return sortOrder === "asc" ? comparison : -comparison;
     });
   }, [savedCards, searchTerm, selectedSport, selectedBatchId, filterRookie, filterAuto, filterMem, sortBy, sortOrder]);
+
+  // Count matches across ALL batches regardless of selectedBatchId (to warn user if active batch hides results)
+  const totalMatchesAcrossAllBatches = useMemo(() => {
+    if (!searchTerm.trim()) return 0;
+    const term = searchTerm.toLowerCase().trim();
+    const searchTokens = term.split(/\s+/).filter(Boolean);
+    const toStr = (val: any): string => (val !== null && val !== undefined ? String(val).toLowerCase() : "");
+
+    return savedCards.filter((item) => {
+      const card = item.data;
+      if (!card) return false;
+      const playerName = toStr(card.playerName || (card as any).subject || (card as any).player);
+      const brand = toStr(card.brand);
+      const setName = toStr(card.setName);
+      const team = toStr(card.team);
+      const cardNumber = toStr(card.cardNumber);
+      const cleanNum = cardNumber.replace(/#/g, "");
+      const subsetParallel = toStr(card.subsetParallel);
+      const sport = toStr(card.sport);
+      const year = toStr(card.year);
+      const prefix = toStr(item.prefix);
+      const fullTitle = toStr(generateCdpTitle(card));
+
+      const searchableText = `${fullTitle} ${playerName} ${brand} ${setName} ${team} ${cardNumber} ${cleanNum} #${cleanNum} ${subsetParallel} ${sport} ${year} ${prefix}`;
+      return searchTokens.every((token) => {
+        const cleanToken = token.replace(/^[#]/, "");
+        return searchableText.includes(token) || (cleanToken.length > 0 && searchableText.includes(cleanToken));
+      });
+    }).length;
+  }, [savedCards, searchTerm]);
 
   // Sort Handler
   const handleHeaderSort = (field: SortField) => {
@@ -205,8 +336,30 @@ export function CollectionTab({
     );
   };
 
-  // Selection Handlers
-  const toggleSelectCard = (id: string) => {
+  // Selection Handlers (Supports Tab / Shift Range Selection)
+  const toggleSelectCard = (id: string, e?: React.MouseEvent) => {
+    const isMultiOrRange = e && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || isTabHeld);
+
+    if (isMultiOrRange && lastSelectedId && lastSelectedId !== id) {
+      const idx1 = filteredCards.findIndex((c) => c.id === lastSelectedId);
+      const idx2 = filteredCards.findIndex((c) => c.id === id);
+
+      if (idx1 >= 0 && idx2 >= 0) {
+        const start = Math.min(idx1, idx2);
+        const end = Math.max(idx1, idx2);
+        const rangeIds = filteredCards.slice(start, end + 1).map((c) => c.id);
+
+        setSelectedIds((prev) => {
+          const next = new Set(prev);
+          rangeIds.forEach((rId) => next.add(rId));
+          return next;
+        });
+        setLastSelectedId(id);
+        return;
+      }
+    }
+
+    // Standard toggle
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -216,6 +369,7 @@ export function CollectionTab({
       }
       return next;
     });
+    setLastSelectedId(id);
   };
 
   const isAllSelected = useMemo(() => {
@@ -242,7 +396,12 @@ export function CollectionTab({
     exportSavedCollectionToCSV(filteredCards, `my_card_collection_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
-  // Rate-limited Bulk Comps Execution Engine
+  // Compute gainers & fallers for widget
+  const { gainers, fallers, hasPriceHistory } = useMemo(() => {
+    return computeGainersAndFallers(savedCards);
+  }, [savedCards]);
+
+  // Rate-limited Bulk Comps Execution Engine with Price Delta Tracking
   const handleRunBulkComps = async () => {
     if (selectedIds.size === 0 || isBulkRunning) return;
 
@@ -282,10 +441,19 @@ export function CollectionTab({
           const estVal = compsData.estimatedMarketValue || compsData.medianPrice || 0;
 
           if (estVal > 0) {
+            const oldVal = item.data.estimatedValue || 0;
+            const deltaDollar = oldVal > 0 ? Math.round((estVal - oldVal) * 100) / 100 : 0;
+            const deltaPct =
+              oldVal > 0 ? Math.round(((estVal - oldVal) / oldVal) * 1000) / 10 : 0;
+
             const updatedData: CDPCardSchema = {
               ...item.data,
+              previousEstimatedValue: oldVal > 0 ? oldVal : item.data.previousEstimatedValue,
               estimatedValue: estVal,
+              priceChange: deltaDollar,
+              priceChangePercentage: deltaPct,
               valueLastUpdated: new Date().toISOString(),
+              lastPriceRefreshedAt: new Date().toISOString(),
             };
             pendingUpdates.push({ id: item.id, data: updatedData });
             pricedSuccessfully++;
@@ -301,6 +469,22 @@ export function CollectionTab({
 
     if (pendingUpdates.length > 0 && updateSavedCardDataBatch) {
       updateSavedCardDataBatch(pendingUpdates);
+
+      // Record snapshot
+      const newTotal = savedCards.reduce((sum, c) => {
+        const matching = pendingUpdates.find((u) => u.id === c.id);
+        return sum + (matching ? matching.data.estimatedValue || 0 : c.data.estimatedValue || 0);
+      }, 0);
+
+      recordPortfolioSnapshot(
+        currentUser?.uid,
+        newTotal,
+        savedCards.length,
+        pendingUpdates.length,
+        "Market Valuation Refresh"
+      ).then((snap) => {
+        setSnapshots((prev) => [...prev, snap]);
+      });
     }
 
     setIsBulkRunning(false);
@@ -311,8 +495,164 @@ export function CollectionTab({
     setTimeout(() => setBulkSummaryMessage(null), 5000);
   };
 
+  // Dedicated Full Portfolio Market Refresh Handler (Weekly / Monthly Sync)
+  const handleRefreshPortfolioPrices = async () => {
+    if (savedCards.length === 0 || isRefreshingMarket) return;
+
+    setIsRefreshingMarket(true);
+    setBulkSummaryMessage("Syncing latest eBay market comps for your collection...");
+
+    const cardsToRefresh = savedCards.slice(0, 15); // Refresh top 15 cards in batch
+    const pendingUpdates: { id: string; data: CDPCardSchema }[] = [];
+
+    for (const item of cardsToRefresh) {
+      const cardTitle = generateCdpTitle(item.data);
+      try {
+        const res = await fetch("/api/comps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: cardTitle }),
+        });
+
+        if (res.ok) {
+          const compsData = await res.json();
+          const estVal = compsData.estimatedMarketValue || compsData.medianPrice || 0;
+
+          if (estVal > 0) {
+            const oldVal = item.data.estimatedValue || 0;
+            const deltaDollar = oldVal > 0 ? Math.round((estVal - oldVal) * 100) / 100 : 0;
+            const deltaPct =
+              oldVal > 0 ? Math.round(((estVal - oldVal) / oldVal) * 1000) / 10 : 0;
+
+            const updatedData: CDPCardSchema = {
+              ...item.data,
+              previousEstimatedValue: oldVal > 0 ? oldVal : item.data.previousEstimatedValue,
+              estimatedValue: estVal,
+              priceChange: deltaDollar,
+              priceChangePercentage: deltaPct,
+              valueLastUpdated: new Date().toISOString(),
+              lastPriceRefreshedAt: new Date().toISOString(),
+            };
+            pendingUpdates.push({ id: item.id, data: updatedData });
+          }
+        }
+      } catch (e) {
+        // Continue
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    if (pendingUpdates.length > 0 && updateSavedCardDataBatch) {
+      updateSavedCardDataBatch(pendingUpdates);
+
+      const newTotal = savedCards.reduce((sum, c) => {
+        const matching = pendingUpdates.find((u) => u.id === c.id);
+        return sum + (matching ? matching.data.estimatedValue || 0 : c.data.estimatedValue || 0);
+      }, 0);
+
+      recordPortfolioSnapshot(
+        currentUser?.uid,
+        newTotal,
+        savedCards.length,
+        pendingUpdates.length,
+        "Periodic Portfolio Refresh"
+      ).then((snap) => {
+        setSnapshots((prev) => [...prev, snap]);
+      });
+    }
+
+    setIsRefreshingMarket(false);
+    setBulkSummaryMessage(`Refreshed live eBay market prices across ${pendingUpdates.length} cards!`);
+    setTimeout(() => setBulkSummaryMessage(null), 5000);
+  };
+
+  // Instant Simulation of Market Movement (Test Weekly/Monthly Gains & Drops)
+  const handleSimulatePriceUpdate = () => {
+    if (savedCards.length === 0) {
+      setBulkSummaryMessage("Scan or add cards in the Batch Scanner to track portfolio value and market gainers!");
+      setTimeout(() => setBulkSummaryMessage(null), 4000);
+      return;
+    }
+
+    const pendingUpdates: { id: string; data: CDPCardSchema }[] = [];
+
+    savedCards.forEach((c, idx) => {
+      const current = c.data.estimatedValue || 25.0;
+      // Alternate between gainers and fallers
+      // Cards at idx % 2 === 0 gain +6% to +28%
+      // Cards at idx % 2 === 1 dip -4% to -18%
+      let variance = 0.05;
+      if (idx % 2 === 0) {
+        variance = 0.08 + (idx % 4) * 0.05; // +8%, +13%, +18%, +23%
+      } else {
+        variance = -(0.05 + (idx % 3) * 0.04); // -5%, -9%, -13%
+      }
+
+      const newPrice = Math.max(1, Math.round(current * (1 + variance) * 100) / 100);
+      const deltaDollar = Math.round((newPrice - current) * 100) / 100;
+      const deltaPct = Math.round(((newPrice - current) / current) * 1000) / 10;
+
+      pendingUpdates.push({
+        id: c.id,
+        data: {
+          ...c.data,
+          previousEstimatedValue: current,
+          estimatedValue: newPrice,
+          priceChange: deltaDollar,
+          priceChangePercentage: deltaPct,
+          valueLastUpdated: new Date().toISOString(),
+          lastPriceRefreshedAt: new Date().toISOString(),
+        },
+      });
+    });
+
+    if (updateSavedCardDataBatch) {
+      updateSavedCardDataBatch(pendingUpdates);
+    }
+
+    const newTotal = pendingUpdates.reduce(
+      (sum, p) => sum + (p.data.estimatedValue || 0),
+      0
+    );
+
+    recordPortfolioSnapshot(
+      currentUser?.uid,
+      newTotal,
+      savedCards.length,
+      pendingUpdates.length,
+      "Simulated Market Movement"
+    ).then((snap) => {
+      setSnapshots((prev) => [...prev, snap]);
+    });
+
+    setBulkSummaryMessage(
+      `Market movement simulated! Updated prices across ${pendingUpdates.length} cards with top gainers & fallers.`
+    );
+    setTimeout(() => setBulkSummaryMessage(null), 5000);
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* SECTION 1: ROBINHOOD-STYLE PORTFOLIO VALUATION GRAPH */}
+      <PortfolioChart
+        totalValue={stats.portfolioValue}
+        cardCount={stats.total}
+        pricedCount={stats.valuedCount}
+        snapshots={snapshots}
+        onRefreshPrices={handleRefreshPortfolioPrices}
+        onSimulatePriceUpdate={handleSimulatePriceUpdate}
+        isRefreshing={isRefreshingMarket}
+      />
+
+      {/* SECTION 2: TOP GAINERS & TOP FALLERS */}
+      <GainersFallersWidget
+        gainers={gainers}
+        fallers={fallers}
+        hasPriceHistory={hasPriceHistory}
+        onInspectCard={onInspectCard}
+        onSimulatePriceUpdate={handleSimulatePriceUpdate}
+      />
+
       {/* Analytics Counter Header */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {/* Total Portfolio Value Card */}
@@ -451,29 +791,79 @@ export function CollectionTab({
             </button>
 
             {availableBatches.map((b) => (
-              <button
+              <div
                 key={b.batchId}
-                onClick={() => selectBatchCards(b.batchId)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5 ${
+                className={`group flex items-center rounded-xl transition shrink-0 overflow-hidden ${
                   selectedBatchId === b.batchId
                     ? "bg-gradient-to-r from-indigo-500 to-cyan-500 text-white font-black shadow-md shadow-indigo-500/30 ring-1 ring-cyan-400"
                     : "bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200"
                 }`}
               >
-                <Tag className="h-3 w-3 text-cyan-400" />
-                <span>{b.batchName}</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-[10px] text-cyan-300">
-                  {b.count} cards
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => selectBatchCards(b.batchId)}
+                  className="px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 focus:outline-none"
+                >
+                  <Tag className={`h-3 w-3 ${selectedBatchId === b.batchId ? "text-cyan-200" : "text-cyan-400"}`} />
+                  <span className="max-w-[180px] truncate">{b.batchName}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    selectedBatchId === b.batchId
+                      ? "bg-black/30 text-white"
+                      : "bg-slate-800 text-cyan-300"
+                  }`}>
+                    {b.count} cards
+                  </span>
+                </button>
+
+                {renameBatch && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenRename(b.batchId, b.batchName, b.count);
+                    }}
+                    title={`Rename "${b.batchName}"`}
+                    className={`pr-2.5 pl-1 py-1.5 transition ${
+                      selectedBatchId === b.batchId
+                        ? "text-white/80 hover:text-white"
+                        : "opacity-40 group-hover:opacity-100 hover:text-cyan-300"
+                    }`}
+                  >
+                    <Edit3 className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
 
           {selectedBatchId !== "all" && (
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
-              <span className="text-slate-300 font-medium">
-                Active Batch: <strong className="text-cyan-400">{availableBatches.find((b) => b.batchId === selectedBatchId)?.batchName}</strong> ({selectedIds.size} cards selected)
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800 text-xs">
+              <div className="flex items-center gap-2.5">
+                <span className="text-slate-300 font-medium">
+                  Active Batch:{" "}
+                  <strong className="text-cyan-400">
+                    {availableBatches.find((b) => b.batchId === selectedBatchId)?.batchName}
+                  </strong>{" "}
+                  <span className="text-slate-400">({selectedIds.size} cards selected)</span>
+                </span>
+
+                {renameBatch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = availableBatches.find((b) => b.batchId === selectedBatchId);
+                      if (target) {
+                        handleOpenRename(target.batchId, target.batchName, target.count);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-cyan-300 transition text-[11px] font-semibold border border-slate-700 active:scale-95 shadow-sm"
+                    title="Rename this batch"
+                  >
+                    <Edit3 className="h-3 w-3 text-cyan-400" />
+                    <span>Rename Batch</span>
+                  </button>
+                )}
+              </div>
 
               <button
                 onClick={handleRunBulkComps}
@@ -485,6 +875,13 @@ export function CollectionTab({
               </button>
             </div>
           )}
+
+          {renameNotice && (
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium animate-in fade-in">
+              <Check className="h-3.5 w-3.5" />
+              <span>{renameNotice}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -493,14 +890,28 @@ export function CollectionTab({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Search Box */}
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 pointer-events-none" />
             <input
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by player, set, team, brand, or number..."
-              className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-mono text-slate-100 focus:outline-none"
+              className="w-full pl-9 pr-8 py-2 bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl text-xs font-mono text-slate-100 focus:outline-none"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-2.5 top-2.5 p-0.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Action Controls & Bulk Runner Button */}
@@ -674,23 +1085,71 @@ export function CollectionTab({
             </button>
           )}
         </div>
+
+        {/* Notice if search query matches cards in other batches */}
+        {selectedBatchId !== "all" && searchTerm.trim() && totalMatchesAcrossAllBatches > filteredCards.length && (
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-xs animate-in fade-in">
+            <span className="text-cyan-300 flex items-center gap-2">
+              <Search className="h-4 w-4 text-cyan-400 shrink-0" />
+              <span>
+                Showing {filteredCards.length} in this batch. Found <strong className="text-white font-bold">{totalMatchesAcrossAllBatches}</strong> total matching card{totalMatchesAcrossAllBatches === 1 ? "" : "s"} across all batches.
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedBatchId("all")}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs transition active:scale-95 shadow-sm"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>Show All Batches ({totalMatchesAcrossAllBatches})</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Collection Content View */}
       {filteredCards.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 p-12 text-center space-y-4">
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800/80 text-slate-400">
-            <Layers className="h-8 w-8" />
+            {selectedBatchId !== "all" && searchTerm.trim() && totalMatchesAcrossAllBatches > 0 ? (
+              <Search className="h-8 w-8 text-cyan-400" />
+            ) : (
+              <Layers className="h-8 w-8" />
+            )}
           </div>
-          <div className="space-y-1">
-            <h4 className="text-base font-bold text-slate-200">
-              {savedCards.length === 0 ? "Your Online Collection is Empty" : "No Cards Match Your Filters"}
-            </h4>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              {savedCards.length === 0
-                ? "Identify sports trading cards in the Batch Scanner tab and click 'Save to Collection' to build your persistent online portfolio."
-                : "Try resetting your search term or active attribute filters to view all saved items."}
-            </p>
+          <div className="space-y-2 max-w-md mx-auto">
+            {selectedBatchId !== "all" && searchTerm.trim() && totalMatchesAcrossAllBatches > 0 ? (
+              <>
+                <h4 className="text-base font-bold text-slate-100">
+                  Player Found in Other Batches!
+                </h4>
+                <p className="text-xs text-slate-300">
+                  There {totalMatchesAcrossAllBatches === 1 ? "is" : "are"}{" "}
+                  <strong className="text-cyan-400">{totalMatchesAcrossAllBatches}</strong> matching card{totalMatchesAcrossAllBatches === 1 ? "" : "s"} in your collection, but outside the currently filtered batch.
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBatchId("all")}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 transition active:scale-95"
+                  >
+                    <Layers className="h-4 w-4" />
+                    <span>Search Across All Batches ({totalMatchesAcrossAllBatches})</span>
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h4 className="text-base font-bold text-slate-200">
+                  {savedCards.length === 0 ? "Your Online Collection is Empty" : "No Cards Match Your Filters"}
+                </h4>
+                <p className="text-xs text-slate-400">
+                  {savedCards.length === 0
+                    ? "Identify sports trading cards in the Batch Scanner tab and click 'Save to Collection' to build your persistent online portfolio."
+                    : "Try resetting your search term or active attribute filters to view all saved items."}
+                </p>
+              </>
+            )}
           </div>
         </div>
       ) : viewMode === "grid" ? (
@@ -753,7 +1212,7 @@ export function CollectionTab({
                   {/* Top Badges & Selection Checkbox */}
                   <div className="absolute top-2 left-2 flex items-center gap-1.5 flex-wrap">
                     <button
-                      onClick={() => toggleSelectCard(item.id)}
+                      onClick={(e) => toggleSelectCard(item.id, e)}
                       className="rounded-md bg-slate-950/90 border border-slate-800 p-1 text-cyan-300 hover:bg-cyan-500 hover:text-white transition"
                     >
                       {isSelected ? <CheckSquare className="h-4 w-4 text-cyan-400" /> : <Square className="h-4 w-4 text-slate-500" />}
@@ -921,15 +1380,20 @@ export function CollectionTab({
                   return (
                     <tr
                       key={item.id}
+                      onClick={(e) => {
+                        if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || isTabHeld) {
+                          toggleSelectCard(item.id, e);
+                        }
+                      }}
                       className={`transition ${
                         isSelected ? "bg-cyan-500/10 font-medium" : "hover:bg-slate-800/40"
                       }`}
                     >
-                      <td className="p-3 text-center">
+                      <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          onChange={() => toggleSelectCard(item.id)}
+                          onChange={(e) => toggleSelectCard(item.id, e as any)}
                           className="rounded border-slate-800 accent-cyan-500 cursor-pointer h-4 w-4"
                         />
                       </td>
@@ -940,7 +1404,10 @@ export function CollectionTab({
                               src={item.frontPreview}
                               alt="Front"
                               className="h-10 w-8 object-cover rounded border border-slate-800 cursor-pointer hover:border-cyan-400"
-                              onClick={() => setPreviewImage(item.frontPreview || null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewImage(item.frontPreview || null);
+                              }}
                             />
                           ) : (
                             <div className="h-10 w-8 rounded border border-slate-800 bg-slate-950 flex items-center justify-center text-[8px] text-slate-600">
@@ -952,20 +1419,44 @@ export function CollectionTab({
                               src={item.backPreview}
                               alt="Back"
                               className="h-10 w-8 object-cover rounded border border-slate-800 cursor-pointer hover:border-cyan-400"
-                              onClick={() => setPreviewImage(item.backPreview || null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPreviewImage(item.backPreview || null);
+                              }}
                             />
                           )}
                         </div>
                       </td>
-                      <td className="p-3 font-mono font-bold text-cyan-300 max-w-[240px] truncate" title={generateCdpTitle(card)}>
-                        {generateCdpTitle(card) || "-"}
+                      {/* Interactive Title: Click to inspect & edit */}
+                      <td
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onInspectCard && onInspectCard(item);
+                        }}
+                        className="p-3 font-mono font-bold text-cyan-300 max-w-[240px] truncate cursor-pointer hover:underline hover:text-cyan-200 transition group/title"
+                        title="Click to view & edit card details"
+                      >
+                        <span className="flex items-center gap-1 truncate">
+                          <span className="truncate">{generateCdpTitle(card) || "-"}</span>
+                          <Eye className="h-3 w-3 shrink-0 opacity-0 group-hover/title:opacity-100 transition text-cyan-400" />
+                        </span>
                       </td>
                       <td className="p-3 font-mono font-black text-emerald-400">
                         {card.estimatedValue !== undefined && card.estimatedValue > 0
                           ? `$${card.estimatedValue.toFixed(2)}`
                           : "-"}
                       </td>
-                      <td className="p-3 font-bold text-white">{card.playerName}</td>
+                      {/* Interactive Player Name: Click to inspect & edit */}
+                      <td
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onInspectCard && onInspectCard(item);
+                        }}
+                        className="p-3 font-bold text-white cursor-pointer hover:underline hover:text-cyan-300 transition"
+                        title="Click to view & edit card details"
+                      >
+                        {card.playerName || (card as any).subject || "Unknown"}
+                      </td>
                       <td className="p-3">
                         {card.year} {card.brand} {card.setName}
                       </td>
@@ -1040,6 +1531,88 @@ export function CollectionTab({
               alt="Full Preview"
               className="max-h-[80vh] w-auto object-contain rounded-xl border border-slate-800"
             />
+          </div>
+        </div>
+      )}
+
+      {/* Rename Batch Modal */}
+      {renamingBatch && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                  <Tag className="h-4 w-4 text-cyan-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-100">Rename Batch</h3>
+                  <p className="text-xs text-slate-400">
+                    Will update <span className="text-cyan-400 font-semibold">{renamingBatch.count}</span> {renamingBatch.count === 1 ? "card" : "cards"} in this batch
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRenamingBatch(null)}
+                disabled={isRenamingSubmitting}
+                className="h-8 w-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleConfirmRename();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-mono font-medium text-slate-300 mb-1.5 uppercase tracking-wider">
+                  Batch Name
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  required
+                  value={renameInputVal}
+                  onChange={(e) => setRenameInputVal(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  disabled={isRenamingSubmitting}
+                  placeholder="e.g. 1996 Topps Chrome Blaster"
+                  className="w-full px-4 py-2.5 bg-slate-950 border border-slate-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 rounded-xl text-sm font-medium text-slate-100 placeholder-slate-600 focus:outline-none transition"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRenamingBatch(null)}
+                  disabled={isRenamingSubmitting}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRenamingSubmitting || !renameInputVal.trim()}
+                  className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white text-xs font-extrabold shadow-lg shadow-cyan-500/20 transition active:scale-95 disabled:opacity-50"
+                >
+                  {isRenamingSubmitting ? (
+                    <>
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-3.5 w-3.5" />
+                      <span>Save Name</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

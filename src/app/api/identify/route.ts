@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
+import { NextRequest, NextResponse } from "next/server";
+import { GoogleGenAI, Type } from "@google/genai";
+import { normalizeSport, cardIdentificationSchema } from "@/lib/geminiClient";
 
 export const maxDuration = 60;
 
@@ -45,34 +46,16 @@ export async function POST(req: Request) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const promptText = `You are an expert sports trading card cataloging AI strictly compliant with Card Dealer Pro (CDP) standards.
-Identify the trading card from these front and back images with 100% precision.
-
-Return ONLY a valid JSON object matching this schema:
-{
-  "cardFound": true,
-  "confidenceScore": 0.98,
-  "playerName": "Full Player / Athlete Name (e.g. Michael Jordan, Ken Griffey Jr.)",
-  "subject": "Full Player / Athlete Name",
-  "cardNumber": "Card Number (pure alphanumeric, no # symbol)",
-  "subsetParallel": "Parallels / Refractor / Base",
-  "team": "Team Name",
-  "sport": "Sport Name (Baseball, Basketball, Football, etc.)",
-  "year": 2024,
-  "brand": "Topps / Panini / Upper Deck / Fleer / Donruss",
-  "publisher": "Publisher / Brand Name",
-  "setName": "Set Name",
-  "isRookie": false,
-  "isAutographed": false,
-  "isMemorabilia": false,
-  "isNumbered": false,
-  "numberedTo": 99,
-  "notes": "Any distinguishing features"
-}`;
+    // Minimal, token-efficient prompt (schema is strictly enforced by responseSchema)
+    const promptText = "Identify this trading card from the images. Extract year, brand, setName, player, cardNumber (no '#' symbol), parallelOrVariation, and isRookie.";
 
     let responseText = "";
     let primaryError = "";
-    const modelsToTry = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"];
+    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"];
+    let successfulModel = "gemini-3.5-flash-lite";
+    let promptTokens = 0;
+    let outputTokens = 0;
+    let totalTokens = 0;
 
     for (const modelName of modelsToTry) {
       try {
@@ -85,14 +68,52 @@ Return ONLY a valid JSON object matching this schema:
           ],
           config: {
             responseMimeType: "application/json",
+            responseSchema: cardIdentificationSchema,
+            maxOutputTokens: 256,
+            temperature: 0.1,
+            thinkingConfig: {
+              thinkingBudget: 0,
+            },
           },
         });
         if (res.text) {
           responseText = res.text;
+          successfulModel = modelName;
+          promptTokens = res.usageMetadata?.promptTokenCount || 0;
+          outputTokens = res.usageMetadata?.candidatesTokenCount || 0;
+          totalTokens = res.usageMetadata?.totalTokenCount || (promptTokens + outputTokens);
           break;
         }
       } catch (mErr: any) {
         const errMsg = mErr.message || String(mErr);
+        if (errMsg.includes("thinkingConfig") || errMsg.includes("thinking")) {
+          try {
+            const res = await ai.models.generateContent({
+              model: modelName,
+              contents: [
+                { text: promptText },
+                { inlineData: { mimeType: "image/jpeg", data: frontClean } },
+                { inlineData: { mimeType: "image/jpeg", data: backClean } },
+              ],
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: cardIdentificationSchema,
+                maxOutputTokens: 256,
+                temperature: 0.1,
+              },
+            });
+            if (res.text) {
+              responseText = res.text;
+              successfulModel = modelName;
+              promptTokens = res.usageMetadata?.promptTokenCount || 0;
+              outputTokens = res.usageMetadata?.candidatesTokenCount || 0;
+              totalTokens = res.usageMetadata?.totalTokenCount || (promptTokens + outputTokens);
+              break;
+            }
+          } catch (retryErr: any) {
+            console.warn(`Model ${modelName} retry failed:`, retryErr.message);
+          }
+        }
         if (!primaryError || mErr.status === 429) {
           primaryError = errMsg;
         }
@@ -101,22 +122,56 @@ Return ONLY a valid JSON object matching this schema:
     }
 
     if (!responseText) {
-      throw new Error(primaryError || "Empty response from Gemini model.");
+      let cleanErr = primaryError || "Empty response from Gemini model.";
+      try {
+        const parsed = JSON.parse(cleanErr);
+        if (parsed.error?.message) cleanErr = parsed.error.message;
+      } catch {}
+      throw new Error(cleanErr);
     }
 
     let parsed = JSON.parse(responseText);
-    const player = parsed.playerName || parsed.subject || parsed.player || "";
-    const brand = parsed.brand || parsed.publisher || "";
-    parsed.playerName = player;
-    parsed.subject = player;
-    parsed.brand = brand;
-    parsed.publisher = brand;
+    const player = (parsed.player || parsed.playerName || parsed.subject || "").trim();
+    const brand = (parsed.brand || parsed.publisher || "").trim();
+    const setName = (parsed.setName || "").trim();
+    const cardNumber = String(parsed.cardNumber || "").replace(/^[#\s]+/, "").trim();
+    const parallel = (parsed.parallelOrVariation || parsed.subsetParallel || "Base").trim() || "Base";
+    const rawYear = String(parsed.year || "").replace(/\D/g, "");
+    const yearNum = parseInt(rawYear, 10) || new Date().getFullYear();
+    const isRookie = Boolean(parsed.isRookie);
+    const sport = normalizeSport(parsed.sport || "", player, brand, setName);
 
-    if (parsed.cardNumber) {
-      parsed.cardNumber = String(parsed.cardNumber).replace(/#/g, "").trim();
-    }
+    const costUsd = Number(((promptTokens * 0.00000030) + (outputTokens * 0.00000250)).toFixed(6));
 
-    return NextResponse.json(parsed, { headers: corsHeaders });
+    const responsePayload = {
+      cardFound: true,
+      confidenceScore: 0.98,
+      playerName: player,
+      subject: player,
+      brand: brand,
+      publisher: brand,
+      setName: setName,
+      cardNumber: cardNumber,
+      subsetParallel: parallel,
+      sport: sport,
+      year: yearNum,
+      isRookie: isRookie,
+      isAutographed: false,
+      isMemorabilia: false,
+      isNumbered: false,
+      condition: "Raw",
+      estimatedValue: 0,
+      aiUsage: {
+        model: successfulModel,
+        promptTokens,
+        outputTokens,
+        totalTokens,
+        costUsd,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    return NextResponse.json(responsePayload, { headers: corsHeaders });
   } catch (error: any) {
     console.error("Error in POST /api/identify:", error);
     return NextResponse.json(

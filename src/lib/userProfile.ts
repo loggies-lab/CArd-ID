@@ -1,6 +1,8 @@
 import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { User } from "firebase/auth";
+import { UserGradingSettings } from "@/types/card";
+import { SubscriptionTier, BillingInterval } from "@/types/subscription";
 
 export interface UserProfileDocument {
   uid: string;
@@ -8,10 +10,17 @@ export interface UserProfileDocument {
   displayName: string | null;
   photoURL: string | null;
   createdAt: string;
-  subscriptionTier: "free" | "starter" | "pro";
+  subscriptionTier: SubscriptionTier;
+  subscriptionStatus?: "active" | "trialing" | "past_due" | "cancelled";
+  billingCycle?: BillingInterval;
+  planAmount?: number;
+  lastPaymentDate?: string;
   scansRemaining: number;
   monthlyScanLimit: number;
+  role?: "user" | "admin";
+  totalCardsSaved?: number;
   lastLogin: string;
+  gradingSettings?: UserGradingSettings;
 }
 
 export interface BatchSessionDocument {
@@ -19,6 +28,19 @@ export interface BatchSessionDocument {
   createdAt: string;
   cardCount: number;
   exportedCsv?: boolean;
+}
+
+/**
+ * Checks if an email belongs to a default platform administrator
+ */
+export function isDefaultAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const lower = email.toLowerCase();
+  return (
+    lower.includes("loganmartinez") ||
+    lower === "admin@cardid.pro" ||
+    lower === "logan@cardid.pro"
+  );
 }
 
 /**
@@ -51,15 +73,18 @@ async function withFirestoreRetry<T>(fn: () => Promise<T>, maxRetries = 3, delay
  * Provisions or updates user profile document at /users/{uid}
  */
 export async function getOrCreateUserProfile(user: User): Promise<UserProfileDocument> {
+  const isAdmin = isDefaultAdminEmail(user.email);
   const defaultProfile: UserProfileDocument = {
     uid: user.uid,
     email: user.email,
-    displayName: user.displayName || null,
+    displayName: user.displayName || (user.email ? user.email.split("@")[0] : "Collector"),
     photoURL: user.photoURL || null,
     createdAt: new Date().toISOString(),
-    subscriptionTier: "free",
-    scansRemaining: 50,
-    monthlyScanLimit: 50,
+    subscriptionTier: isAdmin ? "pro" : "free",
+    subscriptionStatus: "active",
+    scansRemaining: isAdmin ? 9999 : 25,
+    monthlyScanLimit: isAdmin ? 9999 : 25,
+    role: isAdmin ? "admin" : "user",
     lastLogin: new Date().toISOString(),
   };
 
@@ -80,17 +105,24 @@ export async function getOrCreateUserProfile(user: User): Promise<UserProfileDoc
         return newProfile;
       } else {
         const existing = snap.data() as UserProfileDocument;
+        const shouldBeAdmin = existing.role === "admin" || isAdmin;
         const updated = {
           ...existing,
           email: user.email || existing.email,
-          displayName: user.displayName || existing.displayName,
+          displayName: user.displayName || existing.displayName || (user.email ? user.email.split("@")[0] : "Collector"),
           photoURL: user.photoURL || existing.photoURL,
+          role: shouldBeAdmin ? ("admin" as const) : (existing.role || "user"),
+          subscriptionTier: shouldBeAdmin && existing.subscriptionTier === "free" ? ("pro" as const) : existing.subscriptionTier || "free",
+          scansRemaining: shouldBeAdmin && (existing.scansRemaining ?? 0) < 100 ? 9999 : (existing.scansRemaining ?? 25),
           lastLogin: nowIso,
         };
         await updateDoc(userRef, {
           email: updated.email,
           displayName: updated.displayName,
           photoURL: updated.photoURL,
+          role: updated.role,
+          subscriptionTier: updated.subscriptionTier,
+          scansRemaining: updated.scansRemaining,
           lastLogin: nowIso,
         });
         return updated;
@@ -99,6 +131,64 @@ export async function getOrCreateUserProfile(user: User): Promise<UserProfileDoc
   } catch (err) {
     console.warn("Firestore profile sync notice, using local profile fallback:", err);
     return defaultProfile;
+  }
+}
+
+/**
+ * Decrements user's scans remaining by 1 upon successful card identification
+ */
+export async function decrementUserScan(uid: string): Promise<number> {
+  if (!uid || uid === "guest_user") return 24;
+  try {
+    return await withFirestoreRetry(async () => {
+      const userRef = doc(db, "users", uid);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data() as UserProfileDocument;
+        if (data.subscriptionTier === "pro") {
+          return 9999;
+        }
+        const current = data.scansRemaining ?? 25;
+        const next = Math.max(0, current - 1);
+        await updateDoc(userRef, { scansRemaining: next });
+        return next;
+      }
+      return 0;
+    });
+  } catch (err) {
+    console.warn("Failed to decrement user scan count in Firestore:", err);
+    return 0;
+  }
+}
+
+/**
+ * Allows administrators to update any user's subscription tier, scan balance, or role
+ */
+export async function updateUserAdminControls(uid: string, updates: Partial<UserProfileDocument>): Promise<void> {
+  try {
+    await withFirestoreRetry(async () => {
+      const userRef = doc(db, "users", uid);
+      await updateDoc(userRef, updates);
+    });
+  } catch (err) {
+    console.error("Failed to update user admin controls in Firestore:", err);
+    throw err;
+  }
+}
+
+/**
+ * Persists user's custom grading ROI rules & thresholds directly to their Cloud Firestore profile document
+ */
+export async function updateUserGradingSettings(uid: string, settings: UserGradingSettings): Promise<void> {
+  try {
+    await withFirestoreRetry(async () => {
+      const userRef = doc(db, "users", uid);
+      await updateDoc(userRef, {
+        gradingSettings: settings,
+      });
+    });
+  } catch (err) {
+    console.error("Failed to update grading settings in user profile:", err);
   }
 }
 
@@ -125,3 +215,4 @@ export async function logUserBatchSession(
     console.error("Failed to log batch session to Firestore:", err);
   }
 }
+
