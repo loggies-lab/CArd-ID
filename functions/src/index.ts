@@ -1,6 +1,5 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import { GoogleGenAI, Type } from "@google/genai";
 
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const ebayClientId = defineSecret("EBAY_CLIENT_ID");
@@ -151,35 +150,35 @@ function normalizeSport(
 }
 
 const cardIdentificationSchema = {
-  type: Type.OBJECT,
+  type: "OBJECT",
   properties: {
     year: {
-      type: Type.STRING,
+      type: "STRING",
       description: "Year of the card release (e.g. '2023', '1986')",
     },
     brand: {
-      type: Type.STRING,
+      type: "STRING",
       description: "Card brand or manufacturer (e.g. 'Topps', 'Panini', 'Upper Deck', 'Pokemon', 'Bandai')",
     },
     setName: {
-      type: Type.STRING,
+      type: "STRING",
       description: "Specific set name (e.g. 'Prizm', 'Chrome', 'Crown Zenith', '151')",
     },
     player: {
-      type: Type.STRING,
+      type: "STRING",
       description: "Full player or character name (e.g. 'Michael Jordan', 'Ken Griffey Jr.', 'Pikachu', 'Monkey D. Luffy')",
     },
     cardNumber: {
-      type: Type.STRING,
+      type: "STRING",
       description: "Card number without '#' symbol (e.g. '154', 'OP05-119', '025/165')",
     },
     parallelOrVariation: {
-      type: Type.STRING,
+      type: "STRING",
       nullable: true,
       description: "Parallel, variation, refractor, or base (e.g. 'Silver Prizm', 'Refractor', 'Base', 'Alternate Art')",
     },
     isRookie: {
-      type: Type.BOOLEAN,
+      type: "BOOLEAN",
       description: "True if official rookie card (RC), false otherwise",
     },
   },
@@ -227,6 +226,7 @@ export const identifyCard = onCall(
     const backClean = cleanBase64(back);
 
     try {
+      const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey });
 
       // Minimal, token-efficient prompt (schema is strictly enforced by responseSchema)
@@ -254,9 +254,6 @@ export const identifyCard = onCall(
               responseSchema: cardIdentificationSchema,
               maxOutputTokens: 256,
               temperature: 0.1,
-              thinkingConfig: {
-                thinkingBudget: 0,
-              },
             },
           });
           if (res.text) {

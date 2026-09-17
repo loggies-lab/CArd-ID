@@ -71,9 +71,6 @@ export async function POST(req: Request) {
             responseSchema: cardIdentificationSchema,
             maxOutputTokens: 256,
             temperature: 0.1,
-            thinkingConfig: {
-              thinkingBudget: 0,
-            },
           },
         });
         if (res.text) {

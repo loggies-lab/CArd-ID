@@ -1,9 +1,41 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getEbayComps = exports.identifyCard = void 0;
 const https_1 = require("firebase-functions/v2/https");
 const params_1 = require("firebase-functions/params");
-const genai_1 = require("@google/genai");
 const geminiApiKey = (0, params_1.defineSecret)("GEMINI_API_KEY");
 const ebayClientId = (0, params_1.defineSecret)("EBAY_CLIENT_ID");
 const ebayClientSecret = (0, params_1.defineSecret)("EBAY_CLIENT_SECRET");
@@ -125,35 +157,35 @@ function normalizeSport(rawSport = "", playerName = "", brand = "", setName = ""
     return "Other";
 }
 const cardIdentificationSchema = {
-    type: genai_1.Type.OBJECT,
+    type: "OBJECT",
     properties: {
         year: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             description: "Year of the card release (e.g. '2023', '1986')",
         },
         brand: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             description: "Card brand or manufacturer (e.g. 'Topps', 'Panini', 'Upper Deck', 'Pokemon', 'Bandai')",
         },
         setName: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             description: "Specific set name (e.g. 'Prizm', 'Chrome', 'Crown Zenith', '151')",
         },
         player: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             description: "Full player or character name (e.g. 'Michael Jordan', 'Ken Griffey Jr.', 'Pikachu', 'Monkey D. Luffy')",
         },
         cardNumber: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             description: "Card number without '#' symbol (e.g. '154', 'OP05-119', '025/165')",
         },
         parallelOrVariation: {
-            type: genai_1.Type.STRING,
+            type: "STRING",
             nullable: true,
             description: "Parallel, variation, refractor, or base (e.g. 'Silver Prizm', 'Refractor', 'Base', 'Alternate Art')",
         },
         isRookie: {
-            type: genai_1.Type.BOOLEAN,
+            type: "BOOLEAN",
             description: "True if official rookie card (RC), false otherwise",
         },
     },
@@ -185,7 +217,8 @@ exports.identifyCard = (0, https_1.onCall)({ cors: true, secrets: [geminiApiKey]
     const frontClean = cleanBase64(front);
     const backClean = cleanBase64(back);
     try {
-        const ai = new genai_1.GoogleGenAI({ apiKey });
+        const { GoogleGenAI } = await Promise.resolve().then(() => __importStar(require("@google/genai")));
+        const ai = new GoogleGenAI({ apiKey });
         // Minimal, token-efficient prompt (schema is strictly enforced by responseSchema)
         const promptText = "Identify this trading card from the images. Extract year, brand, setName, player, cardNumber (no '#' symbol), parallelOrVariation, and isRookie.";
         let responseText = "";
@@ -209,9 +242,6 @@ exports.identifyCard = (0, https_1.onCall)({ cors: true, secrets: [geminiApiKey]
                         responseSchema: cardIdentificationSchema,
                         maxOutputTokens: 256,
                         temperature: 0.1,
-                        thinkingConfig: {
-                            thinkingBudget: 0,
-                        },
                     },
                 });
                 if (res.text) {
