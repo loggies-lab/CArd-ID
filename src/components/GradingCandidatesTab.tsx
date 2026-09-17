@@ -28,6 +28,7 @@ import {
   Search,
   ArrowUpDown,
   X,
+  Zap,
 } from "lucide-react";
 import Papa from "papaparse";
 
@@ -204,11 +205,16 @@ export function GradingCandidatesTab({
     return Array.from(map.values());
   }, [scannerItems, savedCards]);
 
-  // Filter candidates matching user min raw threshold
+  // Filter candidates matching user min raw threshold OR explicitly triaged into PSA grading
   const candidateCards = useMemo(() => {
     return allCards.filter((item) => {
+      const isExplicitGrading =
+        item.triageStatus === "GRADE_CANDIDATE" ||
+        item.data?.triageStatus === "GRADE_CANDIDATE" ||
+        item.data?.gradingAnalysis?.recommendationTier === "do_it" ||
+        item.data?.gradingAnalysis?.isRecommended;
       const raw = item.data?.estimatedValue || 0;
-      return raw >= minRawThreshold;
+      return isExplicitGrading || raw >= minRawThreshold;
     });
   }, [allCards, minRawThreshold]);
 
@@ -223,7 +229,27 @@ export function GradingCandidatesTab({
     }
   });
 
+  // Cards that qualify for grading but haven't been comped out yet
+  const uncompedCandidates = useMemo(() => {
+    return candidateCards.filter((card) => {
+      const evalData = evaluatedMap[card.id];
+      const hasSessionDone =
+        evalData?.status === "done" && ((evalData.psa10Val || 0) > 0 || (evalData.psa9Val || 0) > 0);
+      const hasCardGrading = !!(
+        card.data?.gradingAnalysis?.lastEvaluated &&
+        ((card.data?.gradingAnalysis?.psa10Value || 0) > 0 || (card.data?.gradingAnalysis?.psa9Value || 0) > 0)
+      );
+      return !hasSessionDone && !hasCardGrading;
+    });
+  }, [candidateCards, evaluatedMap]);
+
   const [isBatchEvaluating, setIsBatchEvaluating] = useState(false);
+  const [compProgress, setCompProgress] = useState<{
+    current: number;
+    total: number;
+    currentTitle: string;
+  } | null>(null);
+  const [compCancelRequested, setCompCancelRequested] = useState(false);
 
   // Sync candidate cards and pre-existing card gradingAnalysis into evaluatedMap
   useEffect(() => {
@@ -467,14 +493,49 @@ export function GradingCandidatesTab({
     }
   };
 
+  const handleRunUncompedGradingComps = async () => {
+    if (uncompedCandidates.length === 0 || isBatchEvaluating) return;
+    setIsBatchEvaluating(true);
+    setCompCancelRequested(false);
+
+    const total = uncompedCandidates.length;
+    for (let i = 0; i < total; i++) {
+      if (compCancelRequested) break;
+      const card = uncompedCandidates[i];
+      const title = generateCdpTitle(card.data || {});
+      setCompProgress({
+        current: i + 1,
+        total,
+        currentTitle: title,
+      });
+      await evaluateCard(card);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+
+    setCompProgress(null);
+    setIsBatchEvaluating(false);
+  };
+
   const handleRunBatchEvaluation = async () => {
     if (candidateCards.length === 0 || isBatchEvaluating) return;
     setIsBatchEvaluating(true);
+    setCompCancelRequested(false);
 
-    for (const card of candidateCards) {
+    const total = candidateCards.length;
+    for (let i = 0; i < total; i++) {
+      if (compCancelRequested) break;
+      const card = candidateCards[i];
+      const title = generateCdpTitle(card.data || {});
+      setCompProgress({
+        current: i + 1,
+        total,
+        currentTitle: title,
+      });
       await evaluateCard(card);
+      await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
+    setCompProgress(null);
     setIsBatchEvaluating(false);
   };
 
@@ -759,13 +820,42 @@ export function GradingCandidatesTab({
 
             {candidateCards.length > 0 && (
               <>
+                {/* Primary Button: Run Comps ONLY on Cards that Qualify for Grading but Haven't Been Comped Out Yet */}
                 <button
+                  type="button"
+                  onClick={handleRunUncompedGradingComps}
+                  disabled={isBatchEvaluating || uncompedCandidates.length === 0}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-mono font-black transition flex items-center gap-2 shadow-lg active:scale-95 disabled:opacity-60 ${
+                    uncompedCandidates.length > 0
+                      ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white shadow-emerald-500/25 ring-2 ring-emerald-400/40 animate-pulse"
+                      : "bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed"
+                  }`}
+                  title={
+                    uncompedCandidates.length > 0
+                      ? `Run graded sales comps on ${uncompedCandidates.length} uncomped card${uncompedCandidates.length === 1 ? '' : 's'}`
+                      : "All grading candidates already have active market comps"
+                  }
+                >
+                  <Zap className={`h-4 w-4 ${uncompedCandidates.length > 0 ? "fill-amber-300 text-amber-300" : "text-slate-500"}`} />
+                  {isBatchEvaluating && compProgress ? (
+                    <span>Evaluating ({compProgress.current}/{compProgress.total})...</span>
+                  ) : uncompedCandidates.length > 0 ? (
+                    <span>Run Comps on Uncomped Cards ({uncompedCandidates.length})</span>
+                  ) : (
+                    <span>✓ All Grading Cards Comped</span>
+                  )}
+                </button>
+
+                {/* Secondary Button: Re-audit All Candidates (Forces re-evaluation on all cards) */}
+                <button
+                  type="button"
                   onClick={handleRunBatchEvaluation}
                   disabled={isBatchEvaluating}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-xs font-mono font-bold text-white shadow-lg shadow-amber-500/20 transition flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                  className="px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 hover:border-slate-600 text-xs font-mono font-bold text-slate-300 transition flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                  title="Re-run sales comps on all grading candidates"
                 >
-                  <RefreshCw className={`h-4 w-4 ${isBatchEvaluating ? "animate-spin" : ""}`} />
-                  {isBatchEvaluating ? "Evaluating Graded Comps..." : "Run Graded Comps Audit"}
+                  <RefreshCw className={`h-3.5 w-3.5 text-slate-400 ${isBatchEvaluating && !compProgress ? "animate-spin" : ""}`} />
+                  <span>Re-audit All ({candidateCards.length})</span>
                 </button>
 
                 <button
@@ -778,6 +868,38 @@ export function GradingCandidatesTab({
             )}
           </div>
         </div>
+
+        {/* Real-time Uncomped Batch Comps Progress Banner */}
+        {isBatchEvaluating && compProgress && (
+          <div className="rounded-2xl border border-emerald-500/40 bg-slate-950/90 p-4 space-y-3 shadow-2xl backdrop-blur-xl animate-fade-in">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="h-4 w-4 text-emerald-400 animate-spin" />
+                <span className="text-xs font-mono font-bold text-emerald-300 uppercase tracking-wider">
+                  Running Comps on Uncomped Grading Candidates ({compProgress.current} / {compProgress.total})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompCancelRequested(true)}
+                className="text-xs font-mono font-bold text-rose-400 hover:text-rose-300 underline"
+              >
+                Cancel Evaluation
+              </button>
+            </div>
+
+            <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-800">
+              <div
+                className="bg-gradient-to-r from-emerald-500 to-cyan-400 h-full transition-all duration-300"
+                style={{ width: `${(compProgress.current / compProgress.total) * 100}%` }}
+              ></div>
+            </div>
+
+            <div className="text-xs font-mono text-slate-400 truncate">
+              Querying Market Comps: <strong className="text-white">{compProgress.currentTitle}</strong>
+            </div>
+          </div>
+        )}
 
         {/* Quick Target Grade Scenario Switcher Toolbar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 shadow-inner">

@@ -422,6 +422,20 @@ export function CollectionTab({
     setSelectedIds(new Set(unpriced.map((c) => c.id)));
   };
 
+  // Cards in collection that qualify for grading but haven't been comped out yet
+  const uncompedGradingCards = useMemo(() => {
+    return savedCards.filter((c) => {
+      const status = getCardTriageStatus(c);
+      const isGradingCandidate = status === "GRADE_CANDIDATE";
+      const isUncomped =
+        c.data.estimatedValue === undefined ||
+        c.data.estimatedValue <= 0 ||
+        !c.data.gradingAnalysis?.psa10Value ||
+        !c.data.gradingAnalysis?.lastEvaluated;
+      return isGradingCandidate && isUncomped;
+    });
+  }, [savedCards]);
+
   const handleExportCSV = () => {
     exportSavedCollectionToCSV(filteredCards, `my_card_collection_${new Date().toISOString().slice(0, 10)}.csv`);
   };
@@ -432,11 +446,10 @@ export function CollectionTab({
   }, [savedCards]);
 
   // Rate-limited Bulk Comps Execution Engine with Price Delta Tracking
-  const handleRunBulkComps = async () => {
-    if (selectedIds.size === 0 || isBulkRunning) return;
-
-    const cardsToValuate = savedCards.filter((c) => selectedIds.has(c.id));
-    if (cardsToValuate.length === 0) return;
+  const handleRunBulkComps = async (customCards?: SavedCollectionItem[] | any) => {
+    const validCustom = Array.isArray(customCards) ? customCards : undefined;
+    const cardsToValuate = validCustom || savedCards.filter((c) => selectedIds.has(c.id));
+    if (cardsToValuate.length === 0 || isBulkRunning) return;
 
     setIsBulkRunning(true);
     setBulkCancelRequested(false);
@@ -1026,6 +1039,22 @@ export function CollectionTab({
                 className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-2 text-xs font-bold text-emerald-300 transition"
               >
                 <CheckSquare className="h-3.5 w-3.5" /> Select Unpriced ({stats.unpricedCount})
+              </button>
+            )}
+
+            {/* Run Comps on Uncomped Grading Cards Shortcut */}
+            {uncompedGradingCards.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setSelectedIds(new Set(uncompedGradingCards.map((c) => c.id)));
+                  await handleRunBulkComps(uncompedGradingCards);
+                }}
+                disabled={isBulkRunning}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-50 px-3 py-2 text-xs font-bold text-white shadow-lg shadow-emerald-600/20 transition active:scale-95 animate-pulse"
+                title={`Run comps on ${uncompedGradingCards.length} uncomped card${uncompedGradingCards.length === 1 ? '' : 's'} in the PSA Grading Queue`}
+              >
+                <Zap className="h-3.5 w-3.5 fill-amber-300 text-amber-300" /> Comp Grading Cards ({uncompedGradingCards.length})
               </button>
             )}
 
