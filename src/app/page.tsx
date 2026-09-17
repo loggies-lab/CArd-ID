@@ -12,6 +12,7 @@ import { UserProfileModal } from "@/components/UserProfileModal";
 import { QrScannerModal } from "@/components/QrScannerModal";
 import { CardDetailsModal } from "@/components/CardDetailsModal";
 import { AdminDashboardTab } from "@/components/AdminDashboardTab";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PaywallModal } from "@/components/PaywallModal";
 import { AuthModal } from "@/components/AuthModal";
 import { LandingAuthView } from "@/components/LandingAuthView";
@@ -69,6 +70,44 @@ function CardIdApp() {
 
     setGradingSettings(loadUserSettings(userProfile?.gradingSettings));
   }, [userProfile]);
+
+  // Synchronize activeTab with URL parameter / hash / path on load and browser navigation
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const syncTabFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab")?.toLowerCase();
+      const hash = window.location.hash.replace(/^#/, "").toLowerCase();
+      const path = window.location.pathname.replace(/^\//, "").toLowerCase();
+
+      const candidate = tabParam || hash || path;
+      if (candidate === "grading" || candidate === "roi") {
+        setActiveTab("grading");
+      } else if (candidate === "ebay" || candidate === "singles") {
+        setActiveTab("ebay");
+      } else if (candidate === "scanner" || candidate === "scan") {
+        setActiveTab("scanner");
+      } else if (candidate === "admin") {
+        setActiveTab("admin");
+      } else if (candidate === "collection") {
+        setActiveTab("collection");
+      }
+    };
+
+    syncTabFromUrl();
+    window.addEventListener("popstate", syncTabFromUrl);
+    return () => window.removeEventListener("popstate", syncTabFromUrl);
+  }, []);
+
+  const handleTabChange = (tab: "scanner" | "collection" | "ebay" | "grading" | "admin") => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", tab);
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
 
   const saveGradingSettings = (newSettings: UserSettings) => {
     setGradingSettings(newSettings);
@@ -578,7 +617,7 @@ function CardIdApp() {
         apiKey={apiKey}
         setApiKey={setApiKey}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleTabChange}
         savedCount={savedCards.length}
         candidateCount={candidateCount}
         ebayCandidateCount={ebayCandidateCount}
@@ -602,9 +641,14 @@ function CardIdApp() {
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-3 py-1 text-xs font-mono font-bold text-cyan-300">
                   <Sparkles className="h-3.5 w-3.5" /> CardID AI Vision Engine v2.0
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300">
-                  <Award className="h-3.5 w-3.5 text-amber-400" /> {gradingSettings.targetCompany} Grading ROI Rules Engine
-                </span>
+                <button
+                  type="button"
+                  onClick={() => handleTabChange("grading")}
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 px-2.5 py-0.5 text-xs font-mono font-bold text-amber-300 transition cursor-pointer"
+                  title="Open Grading ROI & Comps Evaluator"
+                >
+                  <Award className="h-3.5 w-3.5 text-amber-400" /> {gradingSettings.targetCompany || "PSA"} Grading ROI Rules Engine →
+                </button>
               </div>
               <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
                 {activeTab === "scanner"
@@ -710,15 +754,17 @@ function CardIdApp() {
         {/* TAB 4: GRADING CANDIDATES */}
         {activeTab === "grading" && (
           <section className="space-y-4">
-            <GradingCandidatesTab
-              scannerItems={items}
-              savedCards={savedCards}
-              settings={gradingSettings}
-              onOpenSettings={() => setIsSettingsOpen(true)}
-              onInspectCard={(card) => setInspectingCard(card)}
-              onUpdateCard={handleSaveCardDetails}
-              updateSavedCardDataBatch={updateSavedCardDataBatch}
-            />
+            <ErrorBoundary fallbackTitle="Grading ROI Evaluator Encountered an Error">
+              <GradingCandidatesTab
+                scannerItems={items}
+                savedCards={savedCards}
+                settings={gradingSettings}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+                onInspectCard={(card) => setInspectingCard(card)}
+                onUpdateCard={handleSaveCardDetails}
+                updateSavedCardDataBatch={updateSavedCardDataBatch}
+              />
+            </ErrorBoundary>
           </section>
         )}
 

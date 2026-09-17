@@ -106,12 +106,15 @@ export function computeCardTier(
 export function getActiveMetrics(
   evalData: EvaluatedCard | undefined,
   targetGrade: GradingTargetGrade,
-  rawVal: number,
-  fee: number
+  rawVal: number = 0,
+  fee: number = 25.0
 ) {
-  const totalInvestment = rawVal + fee;
-  let psa10Val = evalData?.psa10Val || (rawVal ? parseFloat((rawVal * 2.8).toFixed(2)) : 0);
-  let psa9Val = evalData?.psa9Val || (rawVal ? parseFloat((rawVal * 1.4).toFixed(2)) : 0);
+  const safeRaw = Number.isFinite(rawVal) ? rawVal : 0;
+  const safeFee = Number.isFinite(fee) ? fee : 25.0;
+  const totalInvestment = safeRaw + safeFee;
+
+  let psa10Val = Number(evalData?.psa10Val) || (safeRaw ? parseFloat((safeRaw * 2.8).toFixed(2)) : 0);
+  let psa9Val = Number(evalData?.psa9Val) || (safeRaw ? parseFloat((safeRaw * 1.4).toFixed(2)) : 0);
 
   if (psa9Val > 0 && (!psa10Val || psa9Val >= psa10Val)) {
     psa10Val = parseFloat((psa9Val * 2.8).toFixed(2));
@@ -119,10 +122,18 @@ export function getActiveMetrics(
     psa9Val = parseFloat((psa10Val * 0.40).toFixed(2));
   }
 
-  const net10 = evalData?.netProfitPSA10 !== undefined ? evalData.netProfitPSA10 : parseFloat((psa10Val - totalInvestment).toFixed(2));
-  const net9 = evalData?.netProfitPSA9 !== undefined ? evalData.netProfitPSA9 : parseFloat((psa9Val - totalInvestment).toFixed(2));
-  const roi10 = evalData?.roiPSA10 !== undefined ? evalData.roiPSA10 : (totalInvestment > 0 ? parseFloat(((net10 / totalInvestment) * 100).toFixed(1)) : 0);
-  const roi9 = evalData?.roiPSA9 !== undefined ? evalData.roiPSA9 : (totalInvestment > 0 ? parseFloat(((net9 / totalInvestment) * 100).toFixed(1)) : 0);
+  const net10 = evalData?.netProfitPSA10 !== undefined && Number.isFinite(evalData.netProfitPSA10)
+    ? evalData.netProfitPSA10
+    : parseFloat((psa10Val - totalInvestment).toFixed(2));
+  const net9 = evalData?.netProfitPSA9 !== undefined && Number.isFinite(evalData.netProfitPSA9)
+    ? evalData.netProfitPSA9
+    : parseFloat((psa9Val - totalInvestment).toFixed(2));
+  const roi10 = evalData?.roiPSA10 !== undefined && Number.isFinite(evalData.roiPSA10)
+    ? evalData.roiPSA10
+    : (totalInvestment > 0 ? parseFloat(((net10 / totalInvestment) * 100).toFixed(1)) : 0);
+  const roi9 = evalData?.roiPSA9 !== undefined && Number.isFinite(evalData.roiPSA9)
+    ? evalData.roiPSA9
+    : (totalInvestment > 0 ? parseFloat(((net9 / totalInvestment) * 100).toFixed(1)) : 0);
 
   let activeProfit = net10;
   let activeRoi = roi10;
@@ -140,38 +151,38 @@ export function getActiveMetrics(
 
   return {
     totalInvestment,
-    psa10Val,
-    psa9Val,
-    net10,
-    net9,
-    roi10,
-    roi9,
-    activeProfit,
-    activeRoi,
-    activeGradedVal,
+    psa10Val: Number.isFinite(psa10Val) ? psa10Val : 0,
+    psa9Val: Number.isFinite(psa9Val) ? psa9Val : 0,
+    net10: Number.isFinite(net10) ? net10 : 0,
+    net9: Number.isFinite(net9) ? net9 : 0,
+    roi10: Number.isFinite(roi10) ? roi10 : 0,
+    roi9: Number.isFinite(roi9) ? roi9 : 0,
+    activeProfit: Number.isFinite(activeProfit) ? activeProfit : 0,
+    activeRoi: Number.isFinite(activeRoi) ? activeRoi : 0,
+    activeGradedVal: Number.isFinite(activeGradedVal) ? activeGradedVal : 0,
   };
 }
 
 export function GradingCandidatesTab({
-  scannerItems,
-  savedCards,
+  scannerItems = [],
+  savedCards = [],
   settings,
   onOpenSettings,
   onInspectCard,
   onUpdateCard,
   updateSavedCardDataBatch,
 }: GradingCandidatesTabProps) {
-  const minProfitTarget = settings.minGradingProfit ?? settings.minNetProfitThreshold ?? 50.0;
-  const minRoiTarget = settings.minGradingRoiPct ?? settings.minRoiThreshold ?? 50.0;
+  const minProfitTarget = settings?.minGradingProfit ?? settings?.minNetProfitThreshold ?? 50.0;
+  const minRoiTarget = settings?.minGradingRoiPct ?? settings?.minRoiThreshold ?? 50.0;
   const effectiveGradingFee = getTotalGradingCost(settings);
-  const minRawThreshold = settings.minEbayRawThreshold ?? settings.minRawThreshold ?? 4.0;
-  const [activeTargetGrade, setActiveTargetGrade] = useState<GradingTargetGrade>(settings.targetGrade || "psa9");
+  const minRawThreshold = settings?.minEbayRawThreshold ?? settings?.minRawThreshold ?? 4.0;
+  const [activeTargetGrade, setActiveTargetGrade] = useState<GradingTargetGrade>(settings?.targetGrade || "psa9");
 
   useEffect(() => {
-    if (settings.targetGrade) {
+    if (settings?.targetGrade) {
       setActiveTargetGrade(settings.targetGrade);
     }
-  }, [settings.targetGrade]);
+  }, [settings?.targetGrade]);
 
   // Search & Sorting state
   const [searchTerm, setSearchTerm] = useState("");
@@ -250,7 +261,7 @@ export function GradingCandidatesTab({
             activeTargetGrade,
             minProfitTarget,
             minRoiTarget,
-            settings.requirePsa9Profitability
+            settings?.requirePsa9Profitability
           );
           const isRecommended = tier === "do_it";
 
@@ -295,7 +306,7 @@ export function GradingCandidatesTab({
 
       return changed ? next : prev;
     });
-  }, [allCards, activeTargetGrade, minProfitTarget, minRoiTarget, effectiveGradingFee, settings.requirePsa9Profitability]);
+  }, [allCards, activeTargetGrade, minProfitTarget, minRoiTarget, effectiveGradingFee, settings?.requirePsa9Profitability]);
 
   // Save lightweight evaluatedMap to localStorage whenever evaluation results update
   useEffect(() => {
@@ -531,8 +542,15 @@ export function GradingCandidatesTab({
   // Compute portfolio analysis summary metrics based on active target grade
   const analysisSummary = useMemo(() => {
     const evaluatedItems = candidateCards
-      .map((item) => evaluatedMap[item.id])
-      .filter((e): e is EvaluatedCard => !!e && e.status === "done");
+      .map((item) => {
+        const e = evaluatedMap[item.id];
+        if (!e || e.status !== "done") return null;
+        return {
+          ...e,
+          card: e.card || item,
+        };
+      })
+      .filter((e): e is EvaluatedCard => !!e);
 
     const fee = effectiveGradingFee;
 
@@ -551,7 +569,7 @@ export function GradingCandidatesTab({
         activeTargetGrade,
         minProfitTarget,
         minRoiTarget,
-        settings.requirePsa9Profitability
+        settings?.requirePsa9Profitability
       );
 
       if (tier === "do_it") doItCards.push(e);
@@ -599,7 +617,7 @@ export function GradingCandidatesTab({
       topCard,
       topCardVal,
     };
-  }, [candidateCards, evaluatedMap, activeTargetGrade, minProfitTarget, minRoiTarget, effectiveGradingFee, settings.requirePsa9Profitability]);
+  }, [candidateCards, evaluatedMap, activeTargetGrade, minProfitTarget, minRoiTarget, effectiveGradingFee, settings?.requirePsa9Profitability]);
 
   const filteredCandidateCards = useMemo(() => {
     if (strategyFilter === "all") return candidateCards;
@@ -893,8 +911,8 @@ export function GradingCandidatesTab({
               </span>
             </div>
             <p className="text-[11px] text-slate-300 font-mono truncate">
-              {analysisSummary.topCard
-                ? `Top Card: ${generateCdpTitle(analysisSummary.topCard.card.data || {})}`
+              {analysisSummary.topCard?.card?.data
+                ? `Top Card: ${generateCdpTitle(analysisSummary.topCard.card.data)}`
                 : "Run comps audit to reveal peak graded market potential."}
             </p>
           </div>
@@ -1375,6 +1393,33 @@ export function GradingCandidatesTab({
               </div>
             );
           })}
+        </div>
+      ) : candidateCards.length === 0 ? (
+        <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-12 text-center space-y-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 mx-auto">
+            <Award className="h-6 w-6" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h4 className="text-base font-bold text-white">
+              {allCards.length === 0
+                ? "No Scanned Cards Available Yet"
+                : `No Cards Meet the Raw Threshold ($${minRawThreshold.toFixed(2)})`}
+            </h4>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {allCards.length === 0
+                ? "Upload or scan a batch of trading cards in the Batch Scanner tab to analyze PSA 10 & PSA 9 grading profitability."
+                : `You have ${allCards.length} cards in your collection, but none currently meet the minimum raw value cutoff ($${minRawThreshold.toFixed(2)}). You can lower your minimum raw threshold in settings to analyze lower-value cards.`}
+            </p>
+          </div>
+
+          <div className="flex items-center justify-center gap-3 flex-wrap pt-2">
+            <button
+              onClick={onOpenSettings}
+              className="px-4 py-2 rounded-xl bg-amber-500/20 border border-amber-500/40 text-xs font-mono font-bold text-amber-300 hover:bg-amber-500/30 transition inline-flex items-center gap-2"
+            >
+              <Sliders className="h-3.5 w-3.5" /> Adjust Raw Threshold ($)
+            </button>
+          </div>
         </div>
       ) : (
         <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-12 text-center space-y-4">
