@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
-import { SavedCollectionItem, CDPCardSchema, TriageStatus, getCardTriageStatus } from "@/types/card";
+import {
+  SavedCollectionItem,
+  CDPCardSchema,
+  TriageStatus,
+  getCardTriageStatus,
+  getKeyCardFlags,
+} from "@/types/card";
 import { exportSavedCollectionToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
 import { useAuth } from "@/context/AuthContext";
@@ -35,6 +41,7 @@ import {
   CheckSquare,
   Square,
   AlertCircle,
+  AlertTriangle,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -72,6 +79,7 @@ export function CollectionTab({
   const [filterRookie, setFilterRookie] = useState(false);
   const [filterAuto, setFilterAuto] = useState(false);
   const [filterMem, setFilterMem] = useState(false);
+  const [filterKeyUncomped, setFilterKeyUncomped] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">("table");
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
@@ -199,6 +207,22 @@ export function CollectionTab({
     return counts;
   }, [savedCards]);
 
+  // Key Uncomped Cards for quick filter & count
+  const keyUncompedCards = useMemo(() => {
+    return savedCards.filter((c) => getKeyCardFlags(c).isKeyUncomped);
+  }, [savedCards]);
+  const keyUncompedCount = keyUncompedCards.length;
+
+  const handleToggleKeyUncomped = () => {
+    setFilterKeyUncomped((prev) => {
+      const next = !prev;
+      if (next && selectedTriageStatus !== "ALL" && selectedTriageStatus !== "INBOX") {
+        setSelectedTriageStatus("ALL");
+      }
+      return next;
+    });
+  };
+
   // Unique sports list for filter dropdown
   const availableSports = useMemo(() => {
     const set = new Set<string>();
@@ -281,10 +305,20 @@ export function CollectionTab({
       const matchesRookie = !filterRookie || card.isRookie;
       const matchesAuto = !filterAuto || card.isAutographed;
       const matchesMem = !filterMem || card.isMemorabilia;
+      const matchesKeyUncomped = !filterKeyUncomped || getKeyCardFlags(item).isKeyUncomped;
       const currentTriage = getCardTriageStatus(item);
       const matchesTriage = selectedTriageStatus === "ALL" || currentTriage === selectedTriageStatus;
 
-      return matchesSearch && matchesSport && matchesBatch && matchesRookie && matchesAuto && matchesMem && matchesTriage;
+      return (
+        matchesSearch &&
+        matchesSport &&
+        matchesBatch &&
+        matchesRookie &&
+        matchesAuto &&
+        matchesMem &&
+        matchesTriage &&
+        matchesKeyUncomped
+      );
     });
 
     // Sort by active field and direction
@@ -307,7 +341,19 @@ export function CollectionTab({
 
       return sortOrder === "asc" ? comparison : -comparison;
     });
-  }, [savedCards, searchTerm, selectedSport, selectedBatchId, filterRookie, filterAuto, filterMem, selectedTriageStatus, sortBy, sortOrder]);
+  }, [
+    savedCards,
+    searchTerm,
+    selectedSport,
+    selectedBatchId,
+    filterRookie,
+    filterAuto,
+    filterMem,
+    filterKeyUncomped,
+    selectedTriageStatus,
+    sortBy,
+    sortOrder,
+  ]);
 
   // Count matches across ALL batches regardless of selectedBatchId (to warn user if active batch hides results)
   const totalMatchesAcrossAllBatches = useMemo(() => {
@@ -988,6 +1034,29 @@ export function CollectionTab({
             </button>
           );
         })}
+
+        {/* Quick Filter: Needs Research / Key Uncomped */}
+        <button
+          onClick={handleToggleKeyUncomped}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap border shadow-sm ${
+            filterKeyUncomped
+              ? "border-amber-500 bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40 shadow-md shadow-amber-500/10"
+              : "border-slate-800 bg-slate-900/80 text-slate-400 hover:text-amber-300 hover:border-amber-500/40"
+          }`}
+          title="Filter to uncomped key cards that need research (Rookies, Serial Numbered, Autographs, GOAT Tier)"
+        >
+          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+          <span>Needs Research / Key Uncomped</span>
+          <span
+            className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+              filterKeyUncomped
+                ? "bg-amber-500/30 text-amber-200"
+                : "bg-slate-800 text-amber-400"
+            }`}
+          >
+            {keyUncompedCount}
+          </span>
+        </button>
       </div>
 
       {/* Toolbar & Filter Section */}
@@ -1159,6 +1228,23 @@ export function CollectionTab({
             🏷️ Memorabilia Only
           </button>
 
+          {/* Quick Filter: Needs Research / Key Uncomped */}
+          <button
+            onClick={handleToggleKeyUncomped}
+            className={`px-2.5 py-1 rounded-lg border text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+              filterKeyUncomped
+                ? "bg-amber-500/25 border-amber-500/60 text-amber-300 ring-1 ring-amber-500/40"
+                : "border-slate-800 bg-slate-950 text-slate-400 hover:text-amber-300 hover:border-amber-500/40"
+            }`}
+            title="Filter cards that lack comps but have key attributes"
+          >
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+            <span>⚠️ Needs Research / Key Uncomped</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
+              {keyUncompedCount}
+            </span>
+          </button>
+
           {/* SORT BY DROPDOWN FOR GRID & TABLE VIEWS */}
           <div className="flex items-center gap-1.5 text-slate-400 border-l border-slate-800 pl-3">
             <ArrowUpDown className="h-3.5 w-3.5 text-cyan-400" />
@@ -1191,7 +1277,7 @@ export function CollectionTab({
             </button>
           )}
 
-          {(searchTerm || selectedSport !== "all" || filterRookie || filterAuto || filterMem) && (
+          {(searchTerm || selectedSport !== "all" || filterRookie || filterAuto || filterMem || filterKeyUncomped) && (
             <button
               onClick={() => {
                 setSearchTerm("");
@@ -1199,6 +1285,7 @@ export function CollectionTab({
                 setFilterRookie(false);
                 setFilterAuto(false);
                 setFilterMem(false);
+                setFilterKeyUncomped(false);
               }}
               className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 ml-auto"
             >
@@ -1280,12 +1367,15 @@ export function CollectionTab({
             const card = item.data;
             const isSelected = selectedIds.has(item.id);
             const currentStatus = getCardTriageStatus(item);
+            const keyEval = getKeyCardFlags(item);
             return (
               <div
                 key={item.id}
                 className={`group relative rounded-2xl border transition-all duration-300 overflow-hidden shadow-xl flex flex-col justify-between ${
                   isSelected
                     ? "border-cyan-500 bg-slate-900 ring-2 ring-cyan-500/50"
+                    : keyEval.isKeyUncomped
+                    ? "border-amber-500/50 bg-slate-900/80 hover:border-amber-400 hover:bg-slate-900 ring-1 ring-amber-500/20"
                     : "border-slate-800 bg-slate-900/70 hover:border-slate-700 hover:bg-slate-900"
                 }`}
               >
@@ -1342,11 +1432,15 @@ export function CollectionTab({
                     <span className="rounded-md bg-slate-950/90 border border-slate-800 px-1.5 py-0.5 text-[10px] font-mono font-bold text-cyan-300">
                       #{card.cardNumber || item.prefix}
                     </span>
-                    {card.estimatedValue !== undefined && card.estimatedValue > 0 && (
+                    {card.estimatedValue !== undefined && card.estimatedValue > 0 ? (
                       <span className="rounded-md bg-emerald-500/90 border border-emerald-500/50 px-1.5 py-0.5 text-[10px] font-mono font-bold text-emerald-300 shadow">
                         ${card.estimatedValue.toFixed(2)}
                       </span>
-                    )}
+                    ) : keyEval.isKeyUncomped ? (
+                      <span className="rounded-md bg-amber-500/95 border border-amber-400 px-1.5 py-0.5 text-[10px] font-mono font-black text-slate-950 shadow flex items-center gap-1 animate-pulse">
+                        ⚠️ UNCOMPED
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
@@ -1376,6 +1470,49 @@ export function CollectionTab({
                   title="Click to inspect full CDP card details"
                 >
                   <div>
+                    {/* Prominent Warning Tag & Badge Chips for Uncomped Key Cards */}
+                    {keyEval.isKeyUncomped && (
+                      <div className="mb-3 rounded-xl border border-amber-500/50 bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-amber-500/20 p-2.5 space-y-2 shadow-md">
+                        <div className="flex items-center justify-between gap-1 text-xs font-black text-amber-300">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-sm">⚠️</span>
+                            <span>Uncomped Key Card</span>
+                          </span>
+                          {onInspectCard && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onInspectCard(item);
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] font-mono font-black transition active:scale-95 shadow"
+                            >
+                              Manual Price / Research →
+                            </button>
+                          )}
+                        </div>
+                        {/* Triggered Condition Badges */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {keyEval.badges.map((badge) => (
+                            <span
+                              key={badge}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-black uppercase tracking-wider border shadow-sm ${
+                                badge === "RC"
+                                  ? "bg-emerald-500/25 text-emerald-300 border-emerald-500/50"
+                                  : badge.startsWith("Numbered")
+                                  ? "bg-purple-500/25 text-purple-300 border-purple-500/50"
+                                  : badge === "Autograph"
+                                  ? "bg-amber-500/25 text-amber-300 border-amber-500/50"
+                                  : "bg-rose-500/25 text-rose-300 border-rose-500/50"
+                              }`}
+                            >
+                              [{badge}]
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-start justify-between gap-1">
                       <h4 className="text-xs font-mono font-bold text-cyan-300 line-clamp-2 leading-snug" title={generateCdpTitle(card)}>
                         {generateCdpTitle(card) || card.playerName || "Unknown Card"}
@@ -1431,13 +1568,27 @@ export function CollectionTab({
                       <span className={`font-bold ${
                         currentStatus === 'GRADE_CANDIDATE' ? 'text-emerald-400' :
                         currentStatus === 'EBAY_RAW' ? 'text-blue-400' :
-                        currentStatus === 'DOLLAR_BIN' ? 'text-amber-400' : 'text-slate-400'
+                        currentStatus === 'DOLLAR_BIN' ? 'text-amber-400' :
+                        keyEval.isKeyUncomped ? 'text-amber-400' : 'text-slate-400'
                       }`}>
                         {currentStatus === 'GRADE_CANDIDATE' ? 'PSA Candidate' :
                          currentStatus === 'EBAY_RAW' ? 'eBay Raw' :
-                         currentStatus === 'DOLLAR_BIN' ? 'Dollar Bin' : 'Inbox'}
+                         currentStatus === 'DOLLAR_BIN' ? 'Dollar Bin' :
+                         keyEval.isKeyUncomped ? 'Inbox (Key Uncomped)' : 'Inbox'}
                       </span>
                     </div>
+
+                    {keyEval.isKeyUncomped && onInspectCard && (
+                      <button
+                        type="button"
+                        onClick={() => onInspectCard(item)}
+                        className="w-full mb-1.5 py-1 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold transition flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <Search className="h-3 w-3 text-amber-400" />
+                        <span>Manual Price / Research</span>
+                      </button>
+                    )}
+
                     <div className="grid grid-cols-3 gap-1">
                       <button
                         type="button"
@@ -1555,6 +1706,7 @@ export function CollectionTab({
                   const card = item.data;
                   const isSelected = selectedIds.has(item.id);
                   const currentStatus = getCardTriageStatus(item);
+                  const keyEval = getKeyCardFlags(item);
 
                   return (
                     <tr
@@ -1565,7 +1717,11 @@ export function CollectionTab({
                         }
                       }}
                       className={`transition ${
-                        isSelected ? "bg-cyan-500/10 font-medium" : "hover:bg-slate-800/40"
+                        isSelected
+                          ? "bg-cyan-500/10 font-medium"
+                          : keyEval.isKeyUncomped
+                          ? "bg-amber-500/5 hover:bg-amber-500/10"
+                          : "hover:bg-slate-800/40"
                       }`}
                     >
                       <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
@@ -1612,18 +1768,62 @@ export function CollectionTab({
                           e.stopPropagation();
                           onInspectCard && onInspectCard(item);
                         }}
-                        className="p-3 font-mono font-bold text-cyan-300 max-w-[240px] truncate cursor-pointer hover:underline hover:text-cyan-200 transition group/title"
+                        className="p-3 font-mono font-bold text-cyan-300 max-w-[280px] cursor-pointer hover:underline hover:text-cyan-200 transition group/title"
                         title="Click to view & edit card details"
                       >
-                        <span className="flex items-center gap-1 truncate">
-                          <span className="truncate">{generateCdpTitle(card) || "-"}</span>
-                          <Eye className="h-3 w-3 shrink-0 opacity-0 group-hover/title:opacity-100 transition text-cyan-400" />
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className="flex items-center gap-1 truncate">
+                            <span className="truncate">{generateCdpTitle(card) || "-"}</span>
+                            <Eye className="h-3 w-3 shrink-0 opacity-0 group-hover/title:opacity-100 transition text-cyan-400" />
+                          </span>
+                          {keyEval.isKeyUncomped && (
+                            <div className="flex flex-col gap-1 mt-0.5" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black">
+                                  ⚠️ Uncomped Key Card
+                                </span>
+                                {onInspectCard && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onInspectCard(item)}
+                                    className="px-1.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[9px] font-mono font-black transition shadow"
+                                  >
+                                    Manual Price / Research →
+                                  </button>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {keyEval.badges.map((badge) => (
+                                  <span
+                                    key={badge}
+                                    className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-black border ${
+                                      badge === "RC"
+                                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                        : badge.startsWith("Numbered")
+                                        ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                                        : badge === "Autograph"
+                                        ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                        : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                                    }`}
+                                  >
+                                    [{badge}]
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 font-mono font-black text-emerald-400">
-                        {card.estimatedValue !== undefined && card.estimatedValue > 0
-                          ? `$${card.estimatedValue.toFixed(2)}`
-                          : "-"}
+                        {card.estimatedValue !== undefined && card.estimatedValue > 0 ? (
+                          `$${card.estimatedValue.toFixed(2)}`
+                        ) : keyEval.isKeyUncomped ? (
+                          <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
+                            Uncomped
+                          </span>
+                        ) : (
+                          "-"
+                        )}
                       </td>
                       {/* Interactive Player Name: Click to inspect & edit */}
                       <td
@@ -1667,43 +1867,55 @@ export function CollectionTab({
                         {new Date(item.dateAdded).toLocaleDateString()}
                       </td>
                       <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(item.id, 'GRADE_CANDIDATE')}
-                            title="Send to PSA"
-                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
-                              currentStatus === 'GRADE_CANDIDATE'
-                                ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30 font-extrabold"
-                                : "bg-slate-950/80 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50"
-                            }`}
-                          >
-                            → Send to PSA
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(item.id, 'EBAY_RAW')}
-                            title="Sell Raw"
-                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
-                              currentStatus === 'EBAY_RAW'
-                                ? "bg-blue-500 text-slate-950 border-blue-400 shadow-sm shadow-blue-500/30 font-extrabold"
-                                : "bg-slate-950/80 text-blue-400 border-blue-500/25 hover:bg-blue-500/15 hover:border-blue-500/50"
-                            }`}
-                          >
-                            → Sell Raw
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateStatus(item.id, 'DOLLAR_BIN')}
-                            title="Dollar Bin"
-                            className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
-                              currentStatus === 'DOLLAR_BIN'
-                                ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-extrabold"
-                                : "bg-slate-950/80 text-amber-400 border-amber-500/25 hover:bg-amber-500/15 hover:border-amber-500/50"
-                            }`}
-                          >
-                            → Dollar Bin
-                          </button>
+                        <div className="flex flex-col gap-1.5">
+                          {keyEval.isKeyUncomped && onInspectCard && (
+                            <button
+                              type="button"
+                              onClick={() => onInspectCard(item)}
+                              className="w-full py-1 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold transition flex items-center justify-center gap-1 shadow-sm"
+                            >
+                              <Search className="h-3 w-3 text-amber-400" />
+                              <span>Manual Price / Research</span>
+                            </button>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(item.id, 'GRADE_CANDIDATE')}
+                              title="Send to PSA"
+                              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                                currentStatus === 'GRADE_CANDIDATE'
+                                  ? "bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm shadow-emerald-500/30 font-extrabold"
+                                  : "bg-slate-950/80 text-emerald-400 border-emerald-500/25 hover:bg-emerald-500/15 hover:border-emerald-500/50"
+                              }`}
+                            >
+                              → Send to PSA
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(item.id, 'EBAY_RAW')}
+                              title="Sell Raw"
+                              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                                currentStatus === 'EBAY_RAW'
+                                  ? "bg-blue-500 text-slate-950 border-blue-400 shadow-sm shadow-blue-500/30 font-extrabold"
+                                  : "bg-slate-950/80 text-blue-400 border-blue-500/25 hover:bg-blue-500/15 hover:border-blue-500/50"
+                              }`}
+                            >
+                              → Sell Raw
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateStatus(item.id, 'DOLLAR_BIN')}
+                              title="Dollar Bin"
+                              className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition border whitespace-nowrap ${
+                                currentStatus === 'DOLLAR_BIN'
+                                  ? "bg-amber-500 text-slate-950 border-amber-400 shadow-sm shadow-amber-500/30 font-extrabold"
+                                  : "bg-slate-950/80 text-amber-400 border-amber-500/25 hover:bg-amber-500/15 hover:border-amber-500/50"
+                              }`}
+                            >
+                              → Dollar Bin
+                            </button>
+                          </div>
                         </div>
                       </td>
                       <td className="p-3 text-right">

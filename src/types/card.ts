@@ -161,10 +161,14 @@ export interface SavedCollectionItem {
   triageStatus?: TriageStatus;
 }
 
+import { getKeyCardFlags } from "@/lib/keyCardDetection";
+export * from "@/lib/keyCardDetection";
+
 /**
  * Maps a card to its active triage status.
  * If the card has an explicit triageStatus set, it returns that value.
- * Otherwise, maps existing AI recommendations and price cutoffs, defaulting to 'INBOX'.
+ * Otherwise, evaluates key card flags (preventing uncomped key cards from falling into DOLLAR_BIN),
+ * and maps existing AI recommendations and price cutoffs, defaulting to 'INBOX'.
  */
 export function getCardTriageStatus(
   card: CardItem | SavedCollectionItem | { data?: CDPCardSchema; triageStatus?: TriageStatus }
@@ -174,6 +178,12 @@ export function getCardTriageStatus(
   }
   if (card.data?.triageStatus) {
     return card.data.triageStatus;
+  }
+
+  // Prevent uncomped key cards from accidentally defaulting to DOLLAR_BIN or other queues
+  const keyFlags = getKeyCardFlags(card);
+  if (keyFlags.isKeyUncomped) {
+    return "INBOX";
   }
 
   // Map existing AI recommendations or grading analysis

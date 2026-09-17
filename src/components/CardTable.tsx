@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { CardItem, CDPCardSchema } from "@/types/card";
+import { CardItem, CDPCardSchema, getKeyCardFlags } from "@/types/card";
 import { Download, RefreshCw, AlertCircle, CheckCircle, Edit3, Eye, Trash2, BookmarkPlus, BookmarkCheck, Search, X, Zap } from "lucide-react";
 import { exportCardsToCSV } from "@/lib/csvExport";
 import { generateCdpTitle } from "@/lib/titleGenerator";
@@ -321,8 +321,39 @@ export function CardTable({
                   </td>
 
                   {/* CDP Title */}
-                  <td className="p-2 font-mono font-bold text-cyan-300 text-[11px] max-w-[240px] truncate" title={generateCdpTitle(d)}>
-                    {generateCdpTitle(d) || "-"}
+                  <td className="p-2 font-mono font-bold text-cyan-300 text-[11px] max-w-[260px]" title={generateCdpTitle(d)}>
+                    <div className="flex flex-col gap-1">
+                      <span className="truncate">{generateCdpTitle(d) || "-"}</span>
+                      {(() => {
+                        const keyEval = getKeyCardFlags(item);
+                        if (keyEval.isKeyUncomped) {
+                          return (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black">
+                                ⚠️ Uncomped Key Card
+                              </span>
+                              {keyEval.badges.map((b) => (
+                                <span
+                                  key={b}
+                                  className={`px-1 py-0.2 rounded text-[8px] font-mono font-bold border ${
+                                    b === "RC"
+                                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                      : b.startsWith("Numbered")
+                                      ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                                      : b === "Autograph"
+                                      ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                      : "bg-rose-500/20 text-rose-300 border-rose-500/40"
+                                  }`}
+                                >
+                                  [{b}]
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                   </td>
 
                   {/* Est. Value */}
